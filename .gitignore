@@ -1,0 +1,142 @@
+# Environment variables - NEVER commit these!
+.env
+.env.local
+.env.production
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+/tmp/
+*.tmp
+temp/
+
+# Uploads
+uploads/
+/mnt/resumes/
+
+# Google OAuth
+token.json
+google_oauth.json
+
+# Test files
+test_*.py
+*_test.py
+
+# Documentation folder - ignore all docs
+docs/
+
+# Database dumps
+*.sql
+*.dump
+*.bak
+
+# Compiled files
+*.pyc
+*.pyo
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# Pytest
+.pytest_cache/
+.tox/
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder
+.spyderproject
+.spyproject
+
+# Rope
+.ropeproject
+
+# mkdocs
+/site
+
+# Sample/test data files
+sample_*.csv
+sample_*.json
+test_*.json
+test_*.csv
+
+# Secrets and credentials
+secrets.json
+credentials.json
+service-account.json
+*_credentials.json
+*_secrets.json
+
+# Deployment scripts (if they contain sensitive info)
+deploy_*.sh
+setup_*.sh
+
+# Local configuration
+config_local.py
+settings_local.py
