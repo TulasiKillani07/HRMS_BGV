@@ -117,9 +117,6 @@ class ApplicationsService:
         result = await applicationsCol.insert_one(app_doc)
         app_doc["_id"] = str(result.inserted_id)
         
-        # Update job counts
-        await self._update_job_counts(job_id)
-        
         return app_doc
     
     async def get_applications_for_job(
@@ -175,18 +172,21 @@ class ApplicationsService:
                     })
                     
                     if job_seeker:
+                        # Get clean resume URL from database
+                        resume_url = job_seeker.get("resumeUrl", "")
+                        
                         # Set live profile data
                         app["jobSeekerName"] = job_seeker.get("name")
                         app["jobSeekerEmail"] = job_seeker.get("email")
                         app["jobSeekerPhone"] = job_seeker.get("phone")
-                        app["resumeUrl"] = job_seeker.get("resumeUrl", "")
+                        app["resumeUrl"] = resume_url
                         
                         # Add detailed profile
                         app["jobSeekerProfile"] = {
                             "name": job_seeker.get("name"),
                             "email": job_seeker.get("email"),
                             "phone": job_seeker.get("phone"),
-                            "resumeUrl": job_seeker.get("resumeUrl"),
+                            "resumeUrl": resume_url,
                             "profileCompletion": job_seeker.get("profileCompletion", 0),
                             "experience": job_seeker.get("profileJson", {}).get("experience", []),
                             "education": job_seeker.get("profileJson", {}).get("education", []),
@@ -306,10 +306,6 @@ class ApplicationsService:
                 }
             )
             
-            # Update job counts if stage changed
-            if old_stage != new_stage:
-                await self._update_job_counts(job_id)
-            
             # Get updated application
             updated_app = await applicationsCol.find_one({"_id": ObjectId(application_id)})
             updated_app["_id"] = str(updated_app["_id"])
@@ -362,10 +358,6 @@ class ApplicationsService:
                     
             except:
                 failed_count += 1
-        
-        # Update counts for all affected jobs
-        for job_id in job_ids:
-            await self._update_job_counts(job_id)
         
         return {
             "total": len(application_ids),
@@ -454,61 +446,10 @@ class ApplicationsService:
                 }
             )
             
-            # Update job counts
-            await self._update_job_counts(job_id)
-            
             return True
             
         except:
             return False
-    
-    async def _update_job_counts(self, job_id: str):
-        """
-        Update job's applicant, shortlisted, and hired counts
-        
-        Args:
-            job_id: Job ID
-        """
-        try:
-            # Count applications by stage
-            pipeline = [
-                {
-                    "$match": {
-                        "jobId": job_id,
-                        "isDeleted": False
-                    }
-                },
-                {
-                    "$group": {
-                        "_id": "$stage",
-                        "count": {"$sum": 1}
-                    }
-                }
-            ]
-            
-            cursor = applicationsCol.aggregate(pipeline)
-            stage_counts = {doc["_id"]: doc["count"] async for doc in cursor}
-            
-            # Calculate counts
-            total_count = sum(stage_counts.values())
-            shortlisted_count = stage_counts.get("Shortlisted", 0)
-            hired_count = stage_counts.get("Hired", 0)
-            
-            # Update job
-            await jobsCol.update_one(
-                {"_id": ObjectId(job_id)},
-                {
-                    "$set": {
-                        "applicantCount": total_count,
-                        "shortlistedCount": shortlisted_count,
-                        "hiredCount": hired_count,
-                        "updatedAt": datetime.now(timezone.utc)
-                    }
-                }
-            )
-            
-        except Exception as e:
-            print(f"Error updating job counts: {e}")
     
     async def smart_shortlist_applications(
         self,
@@ -664,9 +605,6 @@ class ApplicationsService:
                         updated_count += 1
                     except Exception as e:
                         print(f"Error updating application {app['applicationId']}: {e}")
-            
-            # Update job counts
-            await self._update_job_counts(job_id)
         
         return {
             "message": "Preview generated" if preview_only else f"Successfully shortlisted {updated_count} applications",

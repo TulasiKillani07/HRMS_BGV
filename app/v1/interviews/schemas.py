@@ -24,7 +24,7 @@ class RoundDetails(BaseModel):
 
 class InterviewResponse(BaseModel):
     """Schema for interview response"""
-    _id: str
+    interviewId: str = Field(..., description="Interview ID (MongoDB _id)")
     applicationId: str
     jobSeekerId: str
     jobId: str

@@ -561,6 +561,17 @@ class InterviewService:
         if not job_seeker:
             raise ValueError("Job seeker not found")
         
+        job_seeker_email = job_seeker.get("email", "")
+        
+        # Check if candidate with same email already exists in THIS organization
+        existing_candidate = await candidatesCol.find_one({
+            "email": job_seeker_email,
+            "organizationId": user_org_id
+        })
+        
+        if existing_candidate:
+            raise ValueError(f"A candidate with email {job_seeker_email} already exists in your organization's BGV system")
+        
         # Get job details
         job = await jobsCol.find_one({
             "_id": ObjectId(interview["jobId"])
@@ -591,7 +602,7 @@ class InterviewService:
             "firstName": first_name,
             "middleName": "",
             "lastName": last_name,
-            "email": job_seeker.get("email", ""),
+            "email": job_seeker_email,
             "phone": job_seeker.get("phone", ""),
             
             # From job/application

@@ -170,9 +170,8 @@ class JobSeekerService:
             
             job_seeker["_id"] = str(job_seeker["_id"])
             
-            # Convert resume URL to downloadable format
-            if job_seeker.get("resumeUrl"):
-                job_seeker["resumeUrl"] = make_cloudinary_url_downloadable(job_seeker["resumeUrl"])
+            # Keep resume URL clean (no fl_attachment)
+            # Transformations applied dynamically when needed
             
             # Remove passwordHash
             if "passwordHash" in job_seeker:

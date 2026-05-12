@@ -143,9 +143,30 @@ class JobsService:
         cursor = jobsCol.find(query).sort("createdAt", -1)
         jobs = await cursor.to_list(length=None)
         
-        # Convert ObjectId to string
+        # Convert ObjectId to string and calculate real-time counts
         for job in jobs:
             job["_id"] = str(job["_id"])
+            job_id = job["_id"]
+            
+            # Real-time count: Total applications (not deleted)
+            job["applicantCount"] = await applicationsCol.count_documents({
+                "jobId": job_id,
+                "isDeleted": False
+            })
+            
+            # Real-time count: Shortlisted applications
+            job["shortlistedCount"] = await applicationsCol.count_documents({
+                "jobId": job_id,
+                "stage": "Resume Shortlist",
+                "isDeleted": False
+            })
+            
+            # Real-time count: Hired applications
+            job["hiredCount"] = await applicationsCol.count_documents({
+                "jobId": job_id,
+                "stage": "Hired",
+                "isDeleted": False
+            })
         
         return jobs
     
@@ -185,6 +206,28 @@ class JobsService:
                     return None  # Not authorized
             
             job["_id"] = str(job["_id"])
+            job_id = job["_id"]
+            
+            # Real-time count: Total applications (not deleted)
+            job["applicantCount"] = await applicationsCol.count_documents({
+                "jobId": job_id,
+                "isDeleted": False
+            })
+            
+            # Real-time count: Shortlisted applications
+            job["shortlistedCount"] = await applicationsCol.count_documents({
+                "jobId": job_id,
+                "stage": "Resume Shortlist",
+                "isDeleted": False
+            })
+            
+            # Real-time count: Hired applications
+            job["hiredCount"] = await applicationsCol.count_documents({
+                "jobId": job_id,
+                "stage": "Hired",
+                "isDeleted": False
+            })
+            
             return job
             
         except Exception as e:

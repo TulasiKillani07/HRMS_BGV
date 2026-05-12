@@ -151,7 +151,7 @@ async def upload_to_cloudinary(file_content: bytes, file_name: str, folder_path:
         folder_path: Folder path in Cloudinary (e.g., "job_seekers/user123")
     
     Returns:
-        Cloudinary URL of uploaded file
+        Clean Cloudinary URL (no transformations, sanitized)
     """
     if not cloudinary_configured:
         raise Exception("Cloudinary not configured. Please set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET in .env")
@@ -172,21 +172,16 @@ async def upload_to_cloudinary(file_content: bytes, file_name: str, folder_path:
             file_obj,
             folder=folder_path,
             resource_type=resource_type,
-            public_id=file_name.rsplit('.', 1)[0],  # Remove extension from public_id
+            public_id=file_name,  # Keep full filename with extension
             overwrite=True,
             invalidate=True
         )
         
-        # Get secure URL with attachment flag for downloadable files
-        if resource_type == "raw":
-            # For raw files (PDFs, DOCX), add fl_attachment flag to make them downloadable
-            cloudinary_url = result.get('secure_url')
-            # Insert fl_attachment flag into URL
-            if '/upload/' in cloudinary_url:
-                cloudinary_url = cloudinary_url.replace('/upload/', '/upload/fl_attachment/')
-        else:
-            # For images, use regular URL
-            cloudinary_url = result.get('secure_url')
+        # Get clean URL from response
+        cloudinary_url = result.get('secure_url')
+        
+        # ✅ Sanitize URL: Remove whitespace, newlines, and encode spaces
+        cloudinary_url = cloudinary_url.strip().replace('\n', '').replace('\r', '').replace(' ', '%20')
         
         print(f"✅ Uploaded to Cloudinary: {cloudinary_url}")
         return cloudinary_url
@@ -198,16 +193,19 @@ async def upload_to_cloudinary(file_content: bytes, file_name: str, folder_path:
 
 def make_cloudinary_url_downloadable(url: str) -> str:
     """
-    Convert Cloudinary URL to downloadable format by adding fl_attachment flag
+    Add fl_attachment flag with filename to Cloudinary URL to force download with correct filename
     
     Args:
-        url: Original Cloudinary URL
+        url: Clean Cloudinary URL from database
     
     Returns:
-        Downloadable Cloudinary URL
+        Downloadable Cloudinary URL with fl_attachment:filename flag
     """
-    if not url:
+    if not url or '/upload/' not in url:
         return url
+    
+    # Sanitize URL first (defensive - in case DB has bad data)
+    url = url.strip().replace('\n', '').replace('\r', '')
     
     # Only process Cloudinary URLs
     if 'cloudinary.com' not in url:
@@ -217,11 +215,19 @@ def make_cloudinary_url_downloadable(url: str) -> str:
     if 'fl_attachment' in url:
         return url
     
-    # Add fl_attachment flag for raw files
+    # Extract the actual filename from the URL
+    from urllib.parse import unquote
+    filename = unquote(url.split('/')[-1])  # e.g., "vamsi -1 .pdf"
+    
+    # In the transformation parameter: replace spaces with underscores (Cloudinary requirement)
+    safe_filename = filename.replace(' ', '_')  # e.g., "vamsi_-1_.pdf"
+    
+    # Correct Cloudinary syntax: fl_attachment:filename (with underscores, no %20)
+    # The file path keeps %20, but transformation parameter uses underscores
     if '/raw/upload/' in url:
-        return url.replace('/raw/upload/', '/raw/upload/fl_attachment/')
+        return url.replace('/raw/upload/', f'/raw/upload/fl_attachment:{safe_filename}/')
     elif '/upload/' in url and '/image/upload/' not in url:
-        return url.replace('/upload/', '/upload/fl_attachment/')
+        return url.replace('/upload/', f'/upload/fl_attachment:{safe_filename}/')
     
     return url
 
@@ -2260,19 +2266,32 @@ async def downloadJobSeekerResume(
         if not resume_url:
             raise HTTPException(status_code=404, detail="No resume uploaded")
         
+        print(f"📥 Downloading resume from: {resume_url}")
+        
         # Download file from Cloudinary
         response = requests.get(resume_url, timeout=30)
         response.raise_for_status()
         
-        # Determine content type
+        print(f"✅ Downloaded {len(response.content)} bytes")
+        
+        # Determine content type based on file extension
         content_type = "application/pdf"
         if resume_url.lower().endswith('.docx'):
             content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         elif resume_url.lower().endswith('.doc'):
             content_type = "application/msword"
+        elif resume_url.lower().endswith('.zip'):
+            content_type = "application/zip"
         
-        # Extract filename from URL or use default
-        filename = job_seeker.get("resumeFilename") or f"{job_seeker.get('name', 'resume').replace(' ', '_')}.pdf"
+        # Extract original filename from URL
+        from urllib.parse import unquote
+        filename = unquote(resume_url.split('/')[-1])  # e.g., "vamsi -1 .pdf"
+        
+        # Fallback to job seeker name if filename extraction fails
+        if not filename or filename == '':
+            filename = f"{job_seeker.get('name', 'resume').replace(' ', '_')}.pdf"
+        
+        print(f"📄 Sending file as: {filename}")
         
         # Log activity
         await logActivity(
@@ -2295,7 +2314,10 @@ async def downloadJobSeekerResume(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch job seeker profile: {str(e)}")
+        print(f"❌ Error in downloadJobSeekerResume: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to download resume: {str(e)}")
 
 
 @app.post("/secure/modifyCandidate")

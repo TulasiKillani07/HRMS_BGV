@@ -339,10 +339,10 @@ async def upload_resume(
     """
     try:
         # Validate file type
-        if not file.filename.endswith(('.pdf', '.doc', '.docx')):
+        if not file.filename.endswith(('.pdf', '.doc', '.docx', '.zip')):
             raise HTTPException(
                 status_code=400,
-                detail="Invalid file type. Only PDF, DOC, and DOCX are allowed"
+                detail="Invalid file type. Only PDF, DOC, DOCX, and ZIP are allowed"
             )
         
         # Read file content

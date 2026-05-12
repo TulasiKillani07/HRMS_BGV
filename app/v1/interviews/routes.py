@@ -75,7 +75,7 @@ def serialize_interview_datetime(interview: dict) -> dict:
       "message": "Interview created successfully",
       "interviewId": "6a0031bf651c6dea3f1acda9",
       "interview": {
-        "_id": "6a0031bf651c6dea3f1acda9",
+        "interviewId": "6a0031bf651c6dea3f1acda9",
         "applicationId": "6a00314a651c6dea3f1acda8",
         "jobSeekerId": "69ff264f1bd50eeba0e601f5",
         "jobId": "6a0028c89d57fa3ca6a76444",
@@ -294,7 +294,7 @@ async def get_interview(
       "message": "Round scheduled successfully",
       "interviewId": "6a0031bf651c6dea3f1acda9",
       "interview": {
-        "_id": "6a0031bf651c6dea3f1acda9",
+        "interviewId": "6a0031bf651c6dea3f1acda9",
         "rounds": [
           {
             "roundNumber": 1,
@@ -417,7 +417,7 @@ async def schedule_round(
       "message": "Round updated successfully",
       "interviewId": "6a0031bf651c6dea3f1acda9",
       "interview": {
-        "_id": "6a0031bf651c6dea3f1acda9",
+        "interviewId": "6a0031bf651c6dea3f1acda9",
         "rounds": [
           {
             "roundNumber": 1,
@@ -450,6 +450,7 @@ async def schedule_round(
       "message": "Round updated successfully",
       "interviewId": "6a0031bf651c6dea3f1acda9",
       "interview": {
+        "interviewId": "6a0031bf651c6dea3f1acda9",
         "rounds": [
           {
             "roundNumber": 1,
@@ -561,7 +562,7 @@ async def update_round(
       "message": "Offer extended successfully",
       "interviewId": "6a0031bf651c6dea3f1acda9",
       "interview": {
-        "_id": "6a0031bf651c6dea3f1acda9",
+        "interviewId": "6a0031bf651c6dea3f1acda9",
         "rounds": [
           {
             "roundNumber": 1,
@@ -681,7 +682,7 @@ async def extend_offer(
       "message": "Candidate rejected successfully",
       "interviewId": "6a0031bf651c6dea3f1acda9",
       "interview": {
-        "_id": "6a0031bf651c6dea3f1acda9",
+        "interviewId": "6a0031bf651c6dea3f1acda9",
         "overallStatus": "Rejected",
         "rejected": true,
         "rejectedAt": "2026-05-13T14:30:00Z",
@@ -779,7 +780,7 @@ async def reject_candidate(
       "message": "Candidate marked as hired successfully",
       "interviewId": "6a0031bf651c6dea3f1acda9",
       "interview": {
-        "_id": "6a0031bf651c6dea3f1acda9",
+        "interviewId": "6a0031bf651c6dea3f1acda9",
         "overallStatus": "Hired",
         "offerExtended": true,
         "hired": true,
@@ -969,46 +970,110 @@ async def initiate_bgv(
           "applicationId": "6a00314a651c6dea3f1acda8",
           "jobSeekerId": "69ff264f1bd50eeba0e601f5",
           "jobId": "6a0028c89d57fa3ca6a76444",
+          "orgId": "6922aaeadc43986902ed7169",
+          "jobSeekerName": "Vamsi Vakada",
+          "jobSeekerEmail": "vamsivakada163@gmail.com",
+          "jobSeekerPhone": "8331086719",
+          "resumeUrl": "https://res.cloudinary.com/dxbjp7jno/raw/upload/...",
+          "profileCompletion": 85,
           "rounds": [
             {
               "roundNumber": 1,
               "roundName": "Tech Round",
+              "interviewerId": null,
+              "interviewer": null,
+              "interviewerEmail": null,
+              "scheduledAt": null,
               "status": "Passed",
-              "rating": 4
+              "rating": 4,
+              "feedback": "Strong technical skills",
+              "completedAt": "2026-05-12T11:30:00Z",
+              "updatedBy": "hr@company.com",
+              "updatedAt": "2026-05-12T11:30:00Z"
             },
             {
               "roundNumber": 2,
               "roundName": "Manager Round",
-              "status": "Scheduled",
+              "interviewerId": "6a0032bf651c6dea3f1acdaa",
               "interviewer": "Priya Sharma",
-              "scheduledAt": "2026-05-12T10:00:00Z"
+              "interviewerEmail": "priya@company.com",
+              "scheduledAt": "2026-05-12T10:00:00Z",
+              "status": "Scheduled",
+              "rating": null,
+              "feedback": "",
+              "completedAt": null,
+              "updatedBy": "hr@company.com",
+              "updatedAt": "2026-05-12T09:00:00Z"
             },
             {
               "roundNumber": 3,
               "roundName": "HR Round",
-              "status": "Pending"
+              "interviewerId": null,
+              "interviewer": null,
+              "interviewerEmail": null,
+              "scheduledAt": null,
+              "status": "Pending",
+              "rating": null,
+              "feedback": "",
+              "completedAt": null,
+              "updatedBy": null,
+              "updatedAt": null
             },
             {
               "roundNumber": 4,
               "roundName": "Final Round",
-              "status": "Pending"
+              "interviewerId": null,
+              "interviewer": null,
+              "interviewerEmail": null,
+              "scheduledAt": null,
+              "status": "Pending",
+              "rating": null,
+              "feedback": "",
+              "completedAt": null,
+              "updatedBy": null,
+              "updatedAt": null
             }
           ],
           "currentRound": 2,
           "overallStatus": "In Progress",
           "offerExtended": false,
+          "offerExtendedAt": null,
+          "offerExtendedBy": null,
           "rejected": false,
+          "rejectedAt": null,
+          "rejectedBy": null,
+          "rejectionReason": "",
+          "rejectedAtRound": null,
           "hired": false,
+          "hiredAt": null,
+          "hiredBy": null,
           "bgvInitiated": false,
+          "bgvInitiatedAt": null,
+          "bgvInitiatedBy": null,
+          "candidateId": null,
           "createdAt": "2026-05-10T07:20:31Z",
-          "updatedAt": "2026-05-11T14:30:00Z"
+          "createdBy": "hr@company.com",
+          "updatedAt": "2026-05-11T14:30:00Z",
+          "isDeleted": false
         },
         {
           "interviewId": "6a0031bf651c6dea3f1acdab",
           "applicationId": "6a00314a651c6dea3f1acda9",
           "jobSeekerId": "69ff264f1bd50eeba0e601f6",
           "jobId": "6a0028c89d57fa3ca6a76444",
-          "rounds": [...],
+          "orgId": "6922aaeadc43986902ed7169",
+          "jobSeekerName": "Tulasi Killani",
+          "jobSeekerEmail": "tulasikillani07@gmail.com",
+          "jobSeekerPhone": "9515714566",
+          "resumeUrl": "https://res.cloudinary.com/dxbjp7jno/raw/upload/...",
+          "profileCompletion": 50,
+          "rounds": [
+            {
+              "roundNumber": 1,
+              "roundName": "Tech Round",
+              "status": "Pending"
+            }
+          ],
           "currentRound": 1,
           "overallStatus": "In Progress",
           "offerExtended": false,
@@ -1016,7 +1081,8 @@ async def initiate_bgv(
           "hired": false,
           "bgvInitiated": false,
           "createdAt": "2026-05-10T08:15:22Z",
-          "updatedAt": "2026-05-10T08:15:22Z"
+          "updatedAt": "2026-05-10T08:15:22Z",
+          "isDeleted": false
         }
       ],
       "total": 2
@@ -1024,8 +1090,9 @@ async def initiate_bgv(
     ```
     
     **Important Notes:**
-    - Each interview has `interviewId` at top level for easy access
-    - `interviewId` is same as `_id` (for frontend convenience)
+    - Each interview has `interviewId` field (MongoDB `_id` renamed for clarity)
+    - No redundant `_id` field in response
+    - Includes job seeker details: name, email, phone, resume URL, profile completion
     - Returns all interviews for the specified job
     - Sorted by creation date (newest first)
     - Includes complete round details and status
@@ -1089,29 +1156,52 @@ async def get_interviews(
       "interviews": [
         {
           "interviewId": "6a0031bf651c6dea3f1acda9",
-          "_id": "6a0031bf651c6dea3f1acda9",
           "applicationId": "6a00314a651c6dea3f1acda8",
           "jobSeekerId": "69ff264f1bd50eeba0e601f5",
           "jobId": "6a0028c89d57fa3ca6a76444",
-          "jobTitle": "Senior Python Developer",
-          "candidateName": "Arjun Kumar",
+          "orgId": "6922aaeadc43986902ed7169",
+          "jobSeekerName": "Arjun Kumar",
+          "jobSeekerEmail": "arjun@example.com",
+          "jobSeekerPhone": "9876543210",
+          "resumeUrl": "https://res.cloudinary.com/dxbjp7jno/raw/upload/...",
+          "profileCompletion": 90,
           "rounds": [
             {
               "roundNumber": 1,
               "roundName": "Tech Round",
               "interviewerId": "6a0032bf651c6dea3f1acdaa",
               "interviewer": "Priya Sharma",
+              "interviewerEmail": "priya@company.com",
+              "scheduledAt": "2026-05-12T10:00:00Z",
               "status": "Scheduled",
-              "scheduledAt": "2026-05-12T10:00:00Z"
+              "rating": null,
+              "feedback": "",
+              "completedAt": null,
+              "updatedBy": "hr@company.com",
+              "updatedAt": "2026-05-12T09:00:00Z"
             }
           ],
           "currentRound": 1,
           "overallStatus": "In Progress",
           "offerExtended": false,
+          "offerExtendedAt": null,
+          "offerExtendedBy": null,
           "rejected": false,
+          "rejectedAt": null,
+          "rejectedBy": null,
+          "rejectionReason": "",
+          "rejectedAtRound": null,
           "hired": false,
+          "hiredAt": null,
+          "hiredBy": null,
+          "bgvInitiated": false,
+          "bgvInitiatedAt": null,
+          "bgvInitiatedBy": null,
+          "candidateId": null,
           "createdAt": "2026-05-10T07:20:31Z",
-          "updatedAt": "2026-05-11T14:30:00Z"
+          "createdBy": "hr@company.com",
+          "updatedAt": "2026-05-11T14:30:00Z",
+          "isDeleted": false
         }
       ],
       "total": 1,
@@ -1124,6 +1214,13 @@ async def get_interviews(
       }
     }
     ```
+    
+    **Important Notes:**
+    - Each interview has `interviewId` field (MongoDB `_id` renamed for clarity)
+    - Includes job seeker details: name, email, phone, resume URL, profile completion
+    - Returns `statusCounts` for dashboard visualization
+    - Supports filtering by status and jobId
+    - Sorted by creation date (newest first)
     
     **Use Cases:**
     - Dashboard: View all ongoing interviews
