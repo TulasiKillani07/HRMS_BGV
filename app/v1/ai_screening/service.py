@@ -397,3 +397,264 @@ Job Description:
             "totalResults": len(processed_results),
             "results": processed_results
         }
+
+    async def add_from_screening(
+        self,
+        first_name: Optional[str],
+        last_name: Optional[str],
+        email: Optional[str],
+        phone: Optional[str],
+        resume_url: Optional[str],
+        resume_filename: Optional[str],
+        job_id: Optional[str],
+        org_id: str,
+        org_name: str,
+        add_as: str,
+        user_email: str,
+        # AI Screening Results
+        final_score: Optional[float] = None,
+        embedding_score: Optional[float] = None,
+        llm_score: Optional[int] = None,
+        recommendation: Optional[str] = None,
+        strengths: Optional[List[str]] = None,
+        weaknesses: Optional[List[str]] = None,
+        summary: Optional[str] = None,
+        explanation: Optional[str] = None,
+        meets_critical_requirements: Optional[bool] = None
+    ) -> Dict:
+        """
+        Add candidate or jobseeker from AI screening results
+        
+        Args:
+            first_name: First name
+            last_name: Last name
+            email: Email address
+            phone: Phone number
+            resume_url: Resume URL from Cloudinary
+            resume_filename: Original resume filename
+            job_id: Job ID (required if add_as='jobseeker')
+            org_id: Organization ID
+            org_name: Organization name
+            add_as: 'candidate' or 'jobseeker'
+            user_email: Email of user adding
+            
+        Returns:
+            Dictionary with created record details
+        """
+        from core.database import candidatesCol, orgsCol
+        
+        # Validation
+        if not any([first_name, last_name, email, phone]):
+            raise ValueError("At least one field (firstName, lastName, email, or phone) is required")
+        
+        if add_as not in ["candidate", "jobseeker"]:
+            raise ValueError("addAs must be either 'candidate' or 'jobseeker'")
+        
+        if add_as == "jobseeker" and not job_id:
+            raise ValueError("jobId is required when addAs='jobseeker'")
+        
+        full_name = f"{first_name or ''} {last_name or ''}".strip()
+        now = datetime.now(timezone.utc)
+        
+        # Option 1: Add as Candidate (Direct BGV)
+        if add_as == "candidate":
+            # Check for duplicate in candidates collection (within org)
+            if email or phone:
+                duplicate_query = {"organizationId": org_id}
+                or_conditions = []
+                
+                if email:
+                    or_conditions.append({"email": email})
+                if phone:
+                    or_conditions.append({"phone": phone})
+                
+                if or_conditions:
+                    duplicate_query["$or"] = or_conditions
+                    existing = await candidatesCol.find_one(duplicate_query)
+                    if existing:
+                        raise ValueError(f"A candidate with this email/phone already exists in your organization")
+            
+            # Create candidate document
+            candidate_doc = {
+                "firstName": first_name or "",
+                "middleName": "",
+                "lastName": last_name or "",
+                "email": email or "",
+                "phone": phone or "",
+                "jobTitle": "",
+                "organizationId": org_id,
+                "organizationName": org_name,
+                
+                # References (empty for direct add)
+                "jobSeekerId": None,
+                "applicationId": None,
+                "interviewId": None,
+                
+                # BGV fields (to be filled later)
+                "aadhaarNumber": "",
+                "panNumber": "",
+                "dob": "",
+                "fatherName": "",
+                "address": "",
+                "district": "",
+                "state": "",
+                "pincode": "",
+                "uanNumber": "",
+                "gender": "",
+                
+                # Resume
+                "resumePath": resume_url or "",
+                
+                # Status
+                "status": "PENDING",
+                "source": "AI_SCREENING",
+                
+                # Metadata
+                "createdAt": now.isoformat(),
+                "createdBy": user_email,
+                "updatedAt": now.isoformat()
+            }
+            
+            result = await candidatesCol.insert_one(candidate_doc)
+            candidate_id = str(result.inserted_id)
+            
+            return {
+                "message": "Candidate added successfully for BGV process",
+                "addedAs": "candidate",
+                "id": candidate_id,
+                "name": full_name,
+                "email": email,
+                "phone": phone,
+                "applicationId": None,
+                "nextStep": "Complete BGV form for this candidate"
+            }
+        
+        # Option 2: Add as Job Seeker (Hiring Pipeline)
+        else:  # add_as == "jobseeker"
+            # Check for duplicate in job_seekers collection
+            if email or phone:
+                duplicate_query = {"isActive": True}
+                or_conditions = []
+                
+                if email:
+                    or_conditions.append({"email": email})
+                if phone:
+                    or_conditions.append({"phone": phone})
+                
+                if or_conditions:
+                    duplicate_query["$or"] = or_conditions
+                    existing = await jobSeekersCol.find_one(duplicate_query)
+                    if existing:
+                        raise ValueError(f"A job seeker with this email/phone already exists")
+            
+            # Create job seeker document
+            job_seeker_doc = {
+                "name": full_name,
+                "email": email,
+                "phone": phone,
+                "resumeUrl": resume_url,
+                "resumeFilename": resume_filename,
+                "source": "ai_screening",
+                "addedBy": "HR",
+                "addedByEmail": user_email,
+                "addedByOrg": org_id,
+                "addedByOrgName": org_name,
+                "createdAt": now.isoformat(),
+                "updatedAt": now.isoformat(),
+                "profileJson": {
+                    "contact_information": {
+                        "name": full_name,
+                        "email": email,
+                        "phone": phone
+                    },
+                    "experience": [],
+                    "education": [],
+                    "skills": []
+                },
+                "profileCompletion": 10,
+                "isActive": True,
+                "passwordHash": None
+            }
+            
+            result = await jobSeekersCol.insert_one(job_seeker_doc)
+            job_seeker_id = str(result.inserted_id)
+            
+            # Create application with stage "Resume Shortlist" (already screened by AI)
+            # Get job details
+            job = await jobsCol.find_one({"_id": ObjectId(job_id)})
+            if not job:
+                raise ValueError("Job not found")
+            
+            application_doc = {
+                "jobId": job_id,
+                "orgId": org_id,
+                "jobSeekerId": job_seeker_id,
+                "candidateName": full_name,
+                "candidateEmail": email or "",
+                "candidatePhone": phone or "",
+                "resumeUrl": resume_url or "",
+                "stage": "Resume Shortlist",  # Already screened by AI
+                "source": "AI_SCREENING",
+                "aiScore": None,
+                "notes": "Added from AI screening",
+                "stageHistory": [
+                    {
+                        "stage": "Resume Shortlist",
+                        "changedBy": user_email,
+                        "changedAt": now,
+                        "notes": "Added from AI screening - resume already reviewed"
+                    }
+                ],
+                "isDeleted": False,
+                "deletedAt": None,
+                "deletedBy": None,
+                "appliedAt": now,
+                "updatedAt": now
+            }
+            
+            app_result = await applicationsCol.insert_one(application_doc)
+            application_id = str(app_result.inserted_id)
+            
+            # Store AI screening results if provided
+            if final_score is not None:
+                screening_result_doc = {
+                    "screeningSessionId": None,  # No session for manual add
+                    "jobId": job_id,
+                    "orgId": org_id,
+                    "applicationId": application_id,
+                    "jobSeekerId": job_seeker_id,
+                    "jobSeekerName": full_name,
+                    "jobSeekerEmail": email or "",
+                    "rank": None,  # No rank for manual add
+                    "finalScore": final_score,
+                    "embeddingScore": embedding_score or 0,
+                    "llmScore": llm_score or 0,
+                    "recommendation": recommendation or "",
+                    "strengths": strengths or [],
+                    "weaknesses": weaknesses or [],
+                    "explanation": explanation or "",
+                    "summary": summary or "",
+                    "meetsCriticalRequirements": meets_critical_requirements or False,
+                    "resumeUrl": resume_url or "",
+                    "createdAt": now,
+                    "createdBy": user_email
+                }
+                
+                await aiScreeningResultsCol.insert_one(screening_result_doc)
+                
+                # Also update application with AI score
+                await applicationsCol.update_one(
+                    {"_id": ObjectId(application_id)},
+                    {"$set": {"aiScore": final_score}}
+                )
+            
+            return {
+                "message": "Job seeker added successfully and application created",
+                "addedAs": "jobseeker",
+                "id": job_seeker_id,
+                "name": full_name,
+                "email": email,
+                "phone": phone,
+                "applicationId": application_id,
+                "nextStep": "Job seeker is now in 'Resume Shortlist' stage. Schedule interview when ready."
+            }

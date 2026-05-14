@@ -47,7 +47,6 @@ class InterviewService:
         application = await applicationsCol.find_one({
             "_id": ObjectId(application_id),
             "orgId": user_org_id,
-            "source": "JOB_PORTAL",
             "isDeleted": False
         })
         
