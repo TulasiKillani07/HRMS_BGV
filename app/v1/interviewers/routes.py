@@ -4,8 +4,8 @@ Routes for Interviewer Management
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 
-# Import from main
-from main import requireAuth, logActivity
+# Import from core
+from core.dependencies import requireAuth, logActivity
 
 # Import from current module
 from .service import InterviewerService

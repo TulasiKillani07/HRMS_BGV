@@ -7,6 +7,7 @@ from bson import ObjectId
 import time
 import io
 import requests
+import json  # ✅ Added for Groq JSON parsing
 
 # Import from core
 from core.database import (
@@ -18,6 +19,131 @@ from core.database import (
 
 # Import AI screening utilities
 from utils.resume_screening_enhanced import screen_resumes_enhanced
+
+# Import Groq client for job-based screening
+try:
+    from groq import Groq
+    GROQ_AVAILABLE = True
+except ImportError:
+    GROQ_AVAILABLE = False
+    print("⚠️ Groq not installed. Install with: pip install groq")
+
+# Initialize Groq client
+import os
+groq_client = None
+if GROQ_AVAILABLE:
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+    if GROQ_API_KEY:
+        groq_client = Groq(api_key=GROQ_API_KEY)
+        print("✅ Groq client initialized for job-based AI screening")
+    else:
+        print("⚠️ GROQ_API_KEY not found in environment")
+
+
+async def analyze_resume_with_groq(
+    resume_text: str,
+    jd_text: str,
+    similarity_score: float,
+    must_have_requirements: Optional[List[str]] = None
+) -> Dict:
+    """
+    Analyze resume using Groq (Llama 3.1 8B) for job-based screening
+    
+    Args:
+        resume_text: Resume content
+        jd_text: Job description content
+        similarity_score: Embedding similarity score
+        must_have_requirements: List of critical requirements
+    
+    Returns:
+        Analysis with requirement compliance
+    """
+    if not groq_client:
+        raise Exception("Groq client not configured")
+    
+    # Build requirements section
+    requirements_section = ""
+    if must_have_requirements:
+        requirements_section += "\nCRITICAL REQUIREMENTS (MUST HAVE):\n"
+        for req in must_have_requirements:
+            requirements_section += f"- {req}\n"
+    
+    # Get current date for context
+    from datetime import datetime
+    current_year = datetime.now().year
+    current_date = datetime.now().strftime("%B %d, %Y")
+    
+    prompt = f"""You are an expert HR recruiter. Analyze this resume against the job description with REALISTIC requirement checking.
+
+🗓️ CURRENT DATE CONTEXT: Today is {current_date}. Be realistic about career timelines:
+- ALL dates in {current_year} are VALID and CURRENT
+- Graduating {current_year} + starting work {current_year} = NORMAL (campus placement)
+- Short gaps (1-6 months) between jobs = NORMAL transition time
+
+JOB DESCRIPTION:
+{jd_text[:3000]}
+
+{requirements_section}
+
+RESUME:
+{resume_text[:4000]}
+
+EMBEDDING SIMILARITY SCORE: {similarity_score:.2%}
+
+Provide a JSON response with:
+1. "meets_critical_requirements": true/false
+2. "match_score": Overall match score 0-100
+3. "strengths": List of 3-5 key strengths
+4. "weaknesses": List of 3-5 genuine gaps
+5. "recommendation": "STRONG_FIT" | "GOOD_FIT" | "MODERATE_FIT" | "WEAK_FIT"
+6. "summary": 2-3 sentence overall assessment
+
+Return ONLY valid JSON, no markdown."""
+
+    try:
+        response = groq_client.chat.completions.create(
+            model="llama-3.1-8b-instant",  # ✅ Groq's Llama 3.1 8B model
+            messages=[
+                {"role": "system", "content": "You are an expert HR recruiter providing structured resume analysis. Always respond with valid JSON only."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.15,
+            max_tokens=1500,
+            top_p=0.9
+        )
+        
+        analysis_text = response.choices[0].message.content.strip()
+        
+        # Remove markdown code blocks if present
+        if analysis_text.startswith("```json"):
+            analysis_text = analysis_text[7:]
+        if analysis_text.startswith("```"):
+            analysis_text = analysis_text[3:]
+        if analysis_text.endswith("```"):
+            analysis_text = analysis_text[:-3]
+        
+        analysis = json.loads(analysis_text.strip())
+        
+        # Add embedding score to analysis
+        analysis["embedding_similarity"] = similarity_score
+        
+        return analysis
+        
+    except json.JSONDecodeError as e:
+        print(f"⚠️ Groq JSON decode error: {e}")
+        # Return fallback analysis
+        return {
+            "meets_critical_requirements": False,
+            "match_score": int(similarity_score * 100),
+            "strengths": ["Resume content extracted successfully"],
+            "weaknesses": ["Detailed analysis unavailable"],
+            "recommendation": "MODERATE_FIT" if similarity_score > 0.7 else "WEAK_FIT",
+            "summary": f"Embedding similarity: {similarity_score:.2%}. Manual review required.",
+            "embedding_similarity": similarity_score
+        }
+    except Exception as e:
+        print(f"❌ Groq AI analysis error: {e}")
+        raise
 
 
 class AIScreeningService:
@@ -181,11 +307,11 @@ class AIScreeningService:
         if failed_applications:
             print(f"⚠️ Failed applications: {failed_applications}")
         
-        # Run AI screening
+        # Run AI screening with Groq (Llama 3.1 8B)
         job_description = job.get("description", "")
         required_skills = job.get("skills", [])
         
-        # Prepare JD file (job description as bytes)
+        # Prepare JD text
         jd_text = f"""Job Title: {job.get('title', '')}
 Department: {job.get('department', '')}
 Location: {job.get('location', '')}
@@ -198,48 +324,116 @@ Required Skills:
 Job Description:
 {job_description}
 """
-        jd_bytes = jd_text.encode('utf-8')
-        jd_file = (jd_bytes, "job_description.txt")
-        
-        # Prepare resume files in the format expected by screen_resumes_enhanced
-        resume_files_formatted = [
-            (rf["content"], rf["filename"]) 
-            for rf in resume_files
-        ]
         
         # Extract must-have requirements from skills
         must_have_requirements = required_skills if required_skills else None
         
-        # Run AI screening with high topN to get all results, then filter
-        # We'll request all resumes (up to 100) and filter by score later
-        max_results = len(resume_files_formatted)
+        # Import text extraction and embedding utilities
+        from utils.resume_screening import extract_text_from_file, get_embedding, cosine_similarity
         
-        # Run AI screening with lower embedding threshold to not filter out candidates prematurely
-        # We'll filter by final score (minScorePercentage) instead
-        screening_results = await screen_resumes_enhanced(
-            resume_files=resume_files_formatted,
-            jd_file=jd_file,
-            top_n=max_results,  # Get all results
-            must_have_requirements=must_have_requirements,
-            nice_to_have=None,
-            min_embedding_score=0.3,  # Lower threshold - let LLM analysis decide
-            embedding_weight=0.3,
-            llm_weight=0.7
-        )
+        # Generate JD embedding for similarity scoring
+        print("🔄 Generating JD embedding...")
+        jd_embedding = get_embedding(jd_text)
+        
+        # Process each resume with Groq
+        print(f"\n🚀 Starting Groq-based AI screening: {len(resume_files)} resumes")
+        analyzed_results = []
+        
+        for idx, resume_data in enumerate(resume_files, 1):
+            filename = resume_data["filename"]
+            resume_bytes = resume_data["content"]
+            app_data = application_map.get(filename)
+            
+            if not app_data:
+                continue
+            
+            try:
+                print(f"\n📄 Processing resume {idx}/{len(resume_files)}: {app_data['jobSeekerName']}")
+                
+                # Extract text from resume
+                resume_text = extract_text_from_file(resume_bytes, filename)
+                
+                if not resume_text or len(resume_text.strip()) < 50:
+                    print(f"⚠️ Skipping {filename}: Text too short")
+                    continue
+                
+                # Generate embedding
+                resume_embedding = get_embedding(resume_text)
+                
+                # Calculate similarity
+                similarity = cosine_similarity(jd_embedding, resume_embedding)
+                print(f"📊 Similarity score: {similarity:.4f}")
+                
+                # Analyze with Groq
+                print(f"🤖 Groq AI Analysis: {app_data['jobSeekerName']}")
+                analysis = await analyze_resume_with_groq(
+                    resume_text,
+                    jd_text,
+                    similarity,
+                    must_have_requirements
+                )
+                
+                # Calculate weighted final score
+                embedding_score_pct = similarity * 100
+                llm_score = analysis.get("match_score", 0)
+                meets_critical = analysis.get("meets_critical_requirements", False)
+                
+                # Weighted score: 30% embedding + 70% LLM
+                if not meets_critical:
+                    final_score = min(50, (embedding_score_pct * 0.3) + (llm_score * 0.7))
+                else:
+                    final_score = (embedding_score_pct * 0.3) + (llm_score * 0.7)
+                
+                final_score = round(final_score, 2)
+                
+                print(f"✅ Analysis complete: {analysis.get('recommendation', 'N/A')} (Final Score: {final_score})")
+                
+                analyzed_results.append({
+                    "filename": filename,
+                    "applicationId": app_data["applicationId"],
+                    "jobSeekerId": app_data["jobSeekerId"],
+                    "jobSeekerName": app_data["jobSeekerName"],
+                    "jobSeekerEmail": app_data["jobSeekerEmail"],
+                    "embedding_similarity": round(similarity, 4),
+                    "llm_match_score": llm_score,
+                    "final_weighted_score": final_score,
+                    "meets_critical_requirements": meets_critical,
+                    "recommendation": analysis.get("recommendation", "MODERATE_FIT"),
+                    "summary": analysis.get("summary", ""),
+                    "strengths": analysis.get("strengths", []),
+                    "weaknesses": analysis.get("weaknesses", []),
+                    "resumeUrl": app_data["resumeUrl"]
+                })
+                
+            except Exception as e:
+                print(f"⚠️ Error analyzing {filename}: {e}")
+                continue
+        
+        if not analyzed_results:
+            raise ValueError("No resumes could be analyzed")
+        
+        # Sort by final weighted score
+        analyzed_results.sort(key=lambda x: x["final_weighted_score"], reverse=True)
+        
+        # Add ranks
+        for idx, result in enumerate(analyzed_results, 1):
+            result["rank"] = idx
+            
+            # Generate ranking explanation
+            if result["meets_critical_requirements"]:
+                explanation = f"Ranked #{idx} out of {len(analyzed_results)} candidates. Strong match with {result['final_weighted_score']:.1f}% overall score."
+            else:
+                explanation = f"Ranked #{idx} out of {len(analyzed_results)} candidates. Score: {result['final_weighted_score']:.1f}%. May need development in critical requirements."
+            
+            result["ranking_explanation"] = explanation
         
         # Process results and store in database
         all_results = []
         screening_session_id = str(ObjectId())  # Unique ID for this screening session
         now = datetime.now(timezone.utc)
         
-        for result in screening_results.get("top_resumes", []):
-            filename = result.get("filename")
-            app_data = application_map.get(filename)
-            
-            if not app_data:
-                continue
-            
-            final_score = result.get("final_weighted_score", 0)
+        for result in analyzed_results:
+            final_score = result["final_weighted_score"]
             
             # Apply minimum score filter if provided
             if min_score_percentage is not None:
@@ -248,7 +442,7 @@ Job Description:
             
             # Update application with AI score
             await applicationsCol.update_one(
-                {"_id": ObjectId(app_data["applicationId"])},
+                {"_id": ObjectId(result["applicationId"])},
                 {
                     "$set": {
                         "aiScore": final_score,
@@ -262,23 +456,25 @@ Job Description:
                 "screeningSessionId": screening_session_id,
                 "jobId": job_id,
                 "orgId": user_org_id,
-                "applicationId": app_data["applicationId"],
-                "jobSeekerId": app_data["jobSeekerId"],
-                "jobSeekerName": app_data["jobSeekerName"],
-                "jobSeekerEmail": app_data["jobSeekerEmail"],
-                "rank": result.get("rank", 0),
+                "applicationId": result["applicationId"],
+                "jobSeekerId": result["jobSeekerId"],
+                "jobSeekerName": result["jobSeekerName"],
+                "jobSeekerEmail": result["jobSeekerEmail"],
+                "rank": result["rank"],
                 "finalScore": final_score,
-                "embeddingScore": result.get("embedding_similarity", 0),
-                "llmScore": result.get("llm_match_score", 0),
-                "recommendation": result.get("recommendation", ""),
-                "strengths": result.get("strengths", []),
-                "weaknesses": result.get("weaknesses", []),
-                "explanation": result.get("ranking_explanation", ""),
-                "summary": result.get("summary", ""),
-                "meetsCriticalRequirements": result.get("meets_critical_requirements", False),
-                "resumeUrl": app_data["resumeUrl"],
+                "embeddingScore": result["embedding_similarity"],
+                "llmScore": result["llm_match_score"],
+                "recommendation": result["recommendation"],
+                "strengths": result["strengths"],
+                "weaknesses": result["weaknesses"],
+                "explanation": result["ranking_explanation"],
+                "summary": result["summary"],
+                "meetsCriticalRequirements": result["meets_critical_requirements"],
+                "resumeUrl": result["resumeUrl"],
                 "createdAt": now,
-                "createdBy": user_org_id
+                "createdBy": user_org_id,
+                "aiProvider": "groq",  # Track which AI was used
+                "aiModel": "llama-3.1-8b-instant"
             }
             
             # Store in ai_screening_results collection
@@ -286,21 +482,21 @@ Job Description:
             
             # Add to results list
             all_results.append({
-                "applicationId": app_data["applicationId"],
-                "jobSeekerId": app_data["jobSeekerId"],
-                "jobSeekerName": app_data["jobSeekerName"],
-                "jobSeekerEmail": app_data["jobSeekerEmail"],
-                "rank": result.get("rank", 0),
+                "applicationId": result["applicationId"],
+                "jobSeekerId": result["jobSeekerId"],
+                "jobSeekerName": result["jobSeekerName"],
+                "jobSeekerEmail": result["jobSeekerEmail"],
+                "rank": result["rank"],
                 "finalScore": final_score,
-                "embeddingScore": result.get("embedding_similarity", 0),
-                "llmScore": result.get("llm_match_score", 0),
-                "recommendation": result.get("recommendation", ""),
-                "strengths": result.get("strengths", []),
-                "weaknesses": result.get("weaknesses", []),
-                "explanation": result.get("ranking_explanation", ""),
-                "summary": result.get("summary", ""),
-                "meetsCriticalRequirements": result.get("meets_critical_requirements", False),
-                "resumeUrl": app_data["resumeUrl"]
+                "embeddingScore": result["embedding_similarity"],
+                "llmScore": result["llm_match_score"],
+                "recommendation": result["recommendation"],
+                "strengths": result["strengths"],
+                "weaknesses": result["weaknesses"],
+                "explanation": result["ranking_explanation"],
+                "summary": result["summary"],
+                "meetsCriticalRequirements": result["meets_critical_requirements"],
+                "resumeUrl": result["resumeUrl"]
             })
         
         # Apply topN limit if provided

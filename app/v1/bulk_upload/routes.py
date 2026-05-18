@@ -8,9 +8,7 @@ from bson import ObjectId
 
 # Import from core
 from core.database import orgsCol
-
-# Import from main (existing functions)
-from main import requireAuth, logActivity
+from core.dependencies import requireAuth, logActivity
 
 # Import from current module
 from .service import BulkUploadService

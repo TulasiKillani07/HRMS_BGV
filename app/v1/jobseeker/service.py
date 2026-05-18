@@ -27,25 +27,66 @@ class JobSeekerService:
         email: str,
         phone: str,
         password: str,
+        # Required personal details
+        dob: str,
+        gender: str,
+        marital_status: str,
+        father_name: str,
+        # Required address
+        permanent_address: str,
+        district: str,
+        state: str,
+        pincode: str,
+        # Optional personal details
+        nationality: Optional[str] = None,
+        mother_name: Optional[str] = None,
+        # Optional address
+        current_address: Optional[str] = None,
+        # Optional identity documents
+        pan_number: Optional[str] = None,
+        aadhaar_number: Optional[str] = None,
+        passport_number: Optional[str] = None,
+        driving_license: Optional[str] = None,
+        # Optional profile
+        location: Optional[str] = None,
+        linkedin_url: Optional[str] = None,
+        github_url: Optional[str] = None,
+        bio: Optional[str] = None,
+        skills: Optional[List[str]] = None,
+        education: Optional[List[Dict]] = None,
+        experience: Optional[List[Dict]] = None,
         resume_url: Optional[str] = None
     ) -> Dict:
         """
         Register a new job seeker
         
         Args:
-            name: Full name
-            email: Email address
-            phone: Phone number
-            password: Plain text password (will be hashed)
-            resume_url: Optional S3 URL to resume
+            name: Full name (required)
+            email: Email address (required)
+            phone: Phone number (required)
+            password: Plain text password (will be hashed) (required)
+            dob: Date of birth (required)
+            gender: Gender (required)
+            marital_status: Marital status (required)
+            father_name: Father's name (required)
+            permanent_address: Permanent address (required)
+            district: District (required)
+            state: State (required)
+            pincode: PIN code (required)
+            All other fields: Optional
             
         Returns:
             Created job seeker document (without passwordHash)
         """
         # Check for duplicate email
-        existing = await jobSeekersCol.find_one({"email": email.lower()})
-        if existing:
+        existing_email = await jobSeekersCol.find_one({"email": email.lower()})
+        if existing_email:
             raise ValueError("Email already registered")
+        
+        # Check for duplicate phone
+        existing_phone = await jobSeekersCol.find_one({"phone": phone})
+        if existing_phone:
+            raise ValueError("Phone number already registered")
         
         # Hash password with bcrypt (10 rounds)
         password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt(rounds=10))
@@ -54,31 +95,58 @@ class JobSeekerService:
         
         # Build job seeker document
         job_seeker_doc = {
-            "name": name,
+            # Required auth fields
             "email": email.lower(),
+            "password": password_hash.decode('utf-8'),
             "phone": phone,
-            "passwordHash": password_hash.decode('utf-8'),
+            "name": name,
+            
+            # Optional personal details
+            "dob": dob,
+            "gender": gender,
+            "maritalStatus": marital_status,
+            "nationality": nationality,
+            "fatherName": father_name,
+            "motherName": mother_name,
+            
+            # Optional address
+            "permanentAddress": permanent_address,
+            "district": district,
+            "state": state,
+            "pincode": pincode,
+            "currentAddress": current_address,
+            
+            # Optional identity documents
+            "panNumber": pan_number,
+            "aadhaarNumber": aadhaar_number,
+            "passportNumber": passport_number,
+            "drivingLicense": driving_license,
+            
+            # Profile fields
+            "location": location,
+            "linkedinUrl": linkedin_url,
+            "githubUrl": github_url,
+            "bio": bio,
+            "skills": skills or [],
             "resumeUrl": resume_url,
-            "profileJson": {
-                "experience": [],
-                "education": [],
-                "skills": [],
-                "bio": "",
-                "location": "",
-                "linkedinUrl": "",
-                "githubUrl": ""
-            },
+            
+            # Nested arrays
+            "education": education or [],
+            "experience": experience or [],
+            
+            # System fields
             "savedJobs": [],
-            "profileCompletion": self._calculate_profile_completion(
+            "profileCompletion": self._calculate_profile_completion_v2(
                 name=name,
                 email=email,
                 phone=phone,
-                resume_url=resume_url,
-                profile_json={
-                    "experience": [],
-                    "education": [],
-                    "skills": []
-                }
+                dob=dob,
+                gender=gender,
+                location=location,
+                bio=bio,
+                skills=skills or [],
+                education=education or [],
+                resume_url=resume_url
             ),
             "createdAt": now,
             "updatedAt": now,
@@ -89,8 +157,8 @@ class JobSeekerService:
         result = await jobSeekersCol.insert_one(job_seeker_doc)
         job_seeker_doc["_id"] = str(result.inserted_id)
         
-        # Remove passwordHash before returning
-        del job_seeker_doc["passwordHash"]
+        # Remove password before returning
+        del job_seeker_doc["password"]
         
         return job_seeker_doc
     
@@ -107,7 +175,7 @@ class JobSeekerService:
             password: Plain text password
             
         Returns:
-            Job seeker document (without passwordHash) or None if invalid
+            Job seeker document (without password) or None if invalid
         """
         try:
             # Find job seeker
@@ -120,7 +188,7 @@ class JobSeekerService:
                 return None
             
             # Verify password
-            password_hash = job_seeker.get("passwordHash", "")
+            password_hash = job_seeker.get("password", "")
             if not password_hash:
                 return None
             
@@ -131,8 +199,8 @@ class JobSeekerService:
             # Convert ObjectId to string
             job_seeker["_id"] = str(job_seeker["_id"])
             
-            # Remove passwordHash before returning
-            del job_seeker["passwordHash"]
+            # Remove password before returning
+            del job_seeker["password"]
             
             return job_seeker
             
@@ -155,7 +223,7 @@ class JobSeekerService:
             job_seeker_id: Job seeker ID
             
         Returns:
-            Job seeker document (without passwordHash) or None
+            Job seeker document (without password) or None
         """
         try:
             from main import make_cloudinary_url_downloadable
@@ -173,9 +241,9 @@ class JobSeekerService:
             # Keep resume URL clean (no fl_attachment)
             # Transformations applied dynamically when needed
             
-            # Remove passwordHash
-            if "passwordHash" in job_seeker:
-                del job_seeker["passwordHash"]
+            # Remove password
+            if "password" in job_seeker:
+                del job_seeker["password"]
             
             return job_seeker
             
@@ -322,7 +390,7 @@ class JobSeekerService:
         profile_json: Dict
     ) -> int:
         """
-        Calculate profile completion percentage
+        Calculate profile completion percentage (OLD METHOD - kept for backward compatibility)
         
         Scoring:
         - name: 10%
@@ -366,6 +434,57 @@ class JobSeekerService:
             score += 15
         
         return score
+    
+    def _calculate_profile_completion_v2(
+        self,
+        name: str,
+        email: str,
+        phone: str,
+        dob: Optional[str],
+        gender: Optional[str],
+        location: Optional[str],
+        bio: Optional[str],
+        skills: List[str],
+        education: List[Dict],
+        resume_url: Optional[str]
+    ) -> int:
+        """
+        Calculate profile completion percentage (NEW METHOD)
+        
+        Fields counted:
+        1. name (required - always present)
+        2. email (required - always present)
+        3. phone (required - always present)
+        4. dob
+        5. gender
+        6. location
+        7. bio
+        8. skills (at least 1)
+        9. education (at least 1)
+        10. resumeUrl
+        
+        Returns:
+            Percentage (0-100)
+        """
+        fields = [
+            bool(name),
+            bool(email),
+            bool(phone),
+            bool(dob),
+            bool(gender),
+            bool(location),
+            bool(bio),
+            len(skills) > 0,
+            len(education) > 0,
+            bool(resume_url)
+        ]
+        
+        count_truthy = sum(1 for field in fields if field)
+        total_fields = len(fields)
+        
+        profile_completion = int((count_truthy / total_fields) * 100)
+        
+        return profile_completion
     
     # ============================================
     # Job Discovery

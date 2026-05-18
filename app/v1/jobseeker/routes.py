@@ -32,7 +32,16 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
 from core.database import jobSeekersCol
 
 # Initialize router
-router = APIRouter(prefix="/jobseeker", tags=["Job Seeker Portal"])
+router = APIRouter(
+    prefix="/jobseeker",
+    tags=["Job Seeker Portal"],
+    responses={
+        401: {"description": "Not authenticated"},
+        403: {"description": "Access denied"},
+        404: {"description": "Resource not found"},
+        500: {"description": "Internal server error"}
+    }
+)
 
 # Initialize service
 service = JobSeekerService()
@@ -116,9 +125,9 @@ async def require_jobseeker_auth(request: Request):
     # Convert ObjectId to string
     job_seeker["_id"] = str(job_seeker["_id"])
     
-    # Remove passwordHash
-    if "passwordHash" in job_seeker:
-        del job_seeker["passwordHash"]
+    # Remove password
+    if "password" in job_seeker:
+        del job_seeker["password"]
     
     return job_seeker
 
@@ -127,7 +136,132 @@ async def require_jobseeker_auth(request: Request):
 # Authentication Routes (Public)
 # ============================================
 
-@router.post("/register")
+@router.post(
+    "/register",
+    status_code=201,
+    summary="Register New Job Seeker",
+    description="""
+    Register a new job seeker with comprehensive profile information.
+    
+    **Required Fields:**
+    - name (min 2 chars)
+    - email (valid email, unique)
+    - phone (exactly 10 digits, unique)
+    - password (min 6 chars)
+    - dob (date of birth)
+    - gender (Male/Female/Other)
+    - maritalStatus (Single/Married/Divorced/Widowed)
+    - fatherName (min 2 chars)
+    - permanentAddress (min 10 chars)
+    - district (min 2 chars)
+    - state (min 2 chars)
+    - pincode (exactly 6 digits)
+    
+    **Optional Personal Details:**
+    - nationality, motherName
+    
+    **Optional Address:**
+    - currentAddress
+    
+    **Optional Identity Documents:**
+    - panNumber (format: ABCDE1234F)
+    - aadhaarNumber (12 digits)
+    - passportNumber, drivingLicense
+    
+    **Optional Profile:**
+    - location, linkedinUrl, githubUrl, bio, skills
+    - education (array), experience (array)
+    
+    **Returns:**
+    - JWT token (in response body AND cookie)
+    - Job seeker profile with profileCompletion percentage
+    
+    **Profile Completion Calculation:**
+    Based on 10 fields (each 10%): name, email, phone, dob, gender, location, bio, skills, education, resumeUrl
+    """,
+    responses={
+        201: {
+            "description": "Registration successful",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "Registration successful",
+                        "token": "eyJqb2JTZWVrZXJJZCI6IjY5MjJhYWVhZGM0Mzk4NjkwMmVkNzE2OSIsImVtYWlsIjoiYXJqdW5AZ21haWwuY29tIiwicm9sZSI6IkpPQlNFRUtFUiIsImlhdCI6MTc3ODg1MzEzNCwiZXhwIjoxNzc5NDU3OTM0fQ",
+                        "jobSeeker": {
+                            "_id": "6922aaeadc43986902ed7169",
+                            "name": "Arjun Kumar",
+                            "email": "arjun@gmail.com",
+                            "phone": "9876543210",
+                            "profileCompletion": 85
+                        }
+                    }
+                }
+            }
+        },
+        409: {
+            "description": "Duplicate email or phone",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "duplicate_email": {
+                            "summary": "Email already registered",
+                            "value": {"detail": "Email already registered"}
+                        },
+                        "duplicate_phone": {
+                            "summary": "Phone already registered",
+                            "value": {"detail": "Phone number already registered"}
+                        }
+                    }
+                }
+            }
+        },
+        422: {
+            "description": "Validation error",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "invalid_email": {
+                            "summary": "Invalid email format",
+                            "value": {
+                                "detail": [
+                                    {
+                                        "loc": ["body", "email"],
+                                        "msg": "value is not a valid email address",
+                                        "type": "value_error.email"
+                                    }
+                                ]
+                            }
+                        },
+                        "invalid_phone": {
+                            "summary": "Invalid phone format",
+                            "value": {
+                                "detail": [
+                                    {
+                                        "loc": ["body", "phone"],
+                                        "msg": "string does not match regex \"^\\d{10}$\"",
+                                        "type": "value_error.str.regex"
+                                    }
+                                ]
+                            }
+                        },
+                        "invalid_pan": {
+                            "summary": "Invalid PAN format",
+                            "value": {
+                                "detail": [
+                                    {
+                                        "loc": ["body", "panNumber"],
+                                        "msg": "string does not match regex \"^[A-Z]{5}[0-9]{4}[A-Z]{1}$\"",
+                                        "type": "value_error.str.regex"
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+)
 async def register(body: JobSeekerRegisterRequest, response: Response):
     """
     Register a new job seeker
@@ -136,12 +270,40 @@ async def register(body: JobSeekerRegisterRequest, response: Response):
     Returns JWT token in response body AND sets cookie
     """
     try:
-        # Register job seeker
+        # Register job seeker with all fields
         job_seeker = await service.register_job_seeker(
             name=body.name,
             email=body.email,
             phone=body.phone,
             password=body.password,
+            # Required personal details
+            dob=body.dob,
+            gender=body.gender,
+            marital_status=body.maritalStatus,
+            father_name=body.fatherName,
+            # Required address
+            permanent_address=body.permanentAddress,
+            district=body.district,
+            state=body.state,
+            pincode=body.pincode,
+            # Optional personal details
+            nationality=body.nationality,
+            mother_name=body.motherName,
+            # Optional address
+            current_address=body.currentAddress,
+            # Optional identity documents
+            pan_number=body.panNumber,
+            aadhaar_number=body.aadhaarNumber,
+            passport_number=body.passportNumber,
+            driving_license=body.drivingLicense,
+            # Optional profile
+            location=body.location,
+            linkedin_url=body.linkedinUrl,
+            github_url=body.githubUrl,
+            bio=body.bio,
+            skills=body.skills,
+            education=body.education,
+            experience=body.experience,
             resume_url=None
         )
         
@@ -181,12 +343,61 @@ async def register(body: JobSeekerRegisterRequest, response: Response):
         }
         
     except ValueError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+        error_msg = str(e)
+        if "Email already registered" in error_msg:
+            raise HTTPException(status_code=409, detail="Email already registered")
+        elif "Phone number already registered" in error_msg:
+            raise HTTPException(status_code=409, detail="Phone number already registered")
+        else:
+            raise HTTPException(status_code=400, detail=error_msg)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
 
 
-@router.post("/login")
+@router.post(
+    "/login",
+    summary="Login Job Seeker",
+    description="""
+    Authenticate job seeker with email and password.
+    
+    **Returns:**
+    - JWT token (in response body AND cookie)
+    - Job seeker profile information
+    
+    **Cookie:**
+    - Name: `jobseekerSession`
+    - Expiry: 7 days
+    - HttpOnly: true
+    """,
+    responses={
+        200: {
+            "description": "Login successful",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "Login successful",
+                        "token": "eyJqb2JTZWVrZXJJZCI6IjY5MjJhYWVhZGM0Mzk4NjkwMmVkNzE2OSIsImVtYWlsIjoiYXJqdW5AZ21haWwuY29tIiwicm9sZSI6IkpPQlNFRUtFUiIsImlhdCI6MTc3ODg1MzEzNCwiZXhwIjoxNzc5NDU3OTM0fQ",
+                        "jobSeeker": {
+                            "_id": "6922aaeadc43986902ed7169",
+                            "name": "Arjun Kumar",
+                            "email": "arjun@gmail.com",
+                            "phone": "9876543210",
+                            "profileCompletion": 85
+                        }
+                    }
+                }
+            }
+        },
+        401: {
+            "description": "Invalid credentials",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Invalid email or password"}
+                }
+            }
+        }
+    }
+)
 async def login(body: JobSeekerLoginRequest, response: Response):
     """
     Login job seeker
@@ -249,7 +460,69 @@ async def login(body: JobSeekerLoginRequest, response: Response):
 # Profile Routes (Protected)
 # ============================================
 
-@router.get("/profile")
+@router.get(
+    "/profile",
+    summary="Get Job Seeker Profile",
+    description="""
+    Get complete profile of authenticated job seeker.
+    
+    **Authentication:** Required (cookie or Bearer token)
+    
+    **Returns:**
+    - Complete profile with all fields
+    - Profile completion percentage
+    - Saved jobs list
+    """,
+    responses={
+        200: {
+            "description": "Profile retrieved successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "profile": {
+                            "_id": "6922aaeadc43986902ed7169",
+                            "name": "Arjun Kumar",
+                            "email": "arjun@gmail.com",
+                            "phone": "9876543210",
+                            "dob": "1995-05-15",
+                            "gender": "Male",
+                            "location": "Bangalore, India",
+                            "bio": "Full-stack developer with 5 years of experience",
+                            "skills": ["Python", "JavaScript", "React"],
+                            "resumeUrl": "https://cloudinary.com/...",
+                            "education": [
+                                {
+                                    "degree": "B.Tech Computer Science",
+                                    "institution": "IIT Bangalore",
+                                    "year": "2017"
+                                }
+                            ],
+                            "experience": [
+                                {
+                                    "company": "Tech Corp",
+                                    "role": "Senior Developer",
+                                    "duration": "2020-2024"
+                                }
+                            ],
+                            "savedJobs": ["jobId1", "jobId2"],
+                            "profileCompletion": 85,
+                            "createdAt": "2024-01-01T00:00:00Z",
+                            "updatedAt": "2024-01-15T00:00:00Z"
+                        }
+                    }
+                }
+            }
+        },
+        401: {
+            "description": "Not authenticated",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "No session cookie"}
+                }
+            }
+        }
+    }
+)
 async def get_profile(job_seeker: dict = Depends(require_jobseeker_auth)):
     """
     Get job seeker profile

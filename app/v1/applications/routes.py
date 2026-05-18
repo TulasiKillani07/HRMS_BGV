@@ -3,8 +3,8 @@ Routes for Applications ATS feature
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-# Import from main
-from main import requireAuth, logActivity
+# Import from core
+from core.dependencies import requireAuth, logActivity
 
 # Import from current module
 from .service import ApplicationsService

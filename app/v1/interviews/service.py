@@ -512,6 +512,27 @@ class InterviewService:
             }
         )
         
+        # Update application stage to "Hired"
+        application_id = interview.get("applicationId")
+        if application_id:
+            await applicationsCol.update_one(
+                {"_id": ObjectId(application_id)},
+                {
+                    "$set": {
+                        "stage": "Hired",
+                        "updatedAt": now
+                    },
+                    "$push": {
+                        "stageHistory": {
+                            "stage": "Hired",
+                            "changedBy": user_email,
+                            "changedAt": now,
+                            "notes": "Candidate marked as hired"
+                        }
+                    }
+                }
+            )
+        
         # Get updated interview
         updated = await self.get_interview(interview_id, user_org_id)
         return updated
@@ -595,7 +616,7 @@ class InterviewService:
         first_name = name_parts[0] if len(name_parts) > 0 else ""
         last_name = name_parts[1] if len(name_parts) > 1 else ""
         
-        # Create candidate document
+        # Create candidate document with auto-filled fields from job seeker profile
         candidate_doc = {
             # Pre-filled from job seeker
             "firstName": first_name,
@@ -614,17 +635,24 @@ class InterviewService:
             "applicationId": interview["applicationId"],
             "interviewId": interview_id,
             
-            # To be filled in BGV form
-            "aadhaarNumber": "",
-            "panNumber": "",
-            "dob": "",
-            "fatherName": "",
-            "address": "",
-            "district": "",
-            "state": "",
-            "pincode": "",
+            # Auto-filled from job seeker profile (NEW)
+            "dob": job_seeker.get("dob", ""),
+            "gender": job_seeker.get("gender", ""),
+            "fatherName": job_seeker.get("fatherName", ""),
+            "address": job_seeker.get("permanentAddress", ""),  # Use permanentAddress
+            "district": job_seeker.get("district", ""),  # NEW
+            "state": job_seeker.get("state", ""),  # NEW
+            "pincode": job_seeker.get("pincode", ""),  # NEW
+            "maritalStatus": job_seeker.get("maritalStatus", ""),
+            "nationality": job_seeker.get("nationality", ""),
+            "motherName": job_seeker.get("motherName", ""),
+            
+            # To be filled in BGV form (if not in job seeker profile)
+            "aadhaarNumber": job_seeker.get("aadhaarNumber", ""),
+            "panNumber": job_seeker.get("panNumber", ""),
+            "passportNumber": job_seeker.get("passportNumber", ""),
+            "drivingLicense": job_seeker.get("drivingLicense", ""),
             "uanNumber": "",
-            "gender": "",
             
             # Resume
             "resumePath": job_seeker.get("resumeUrl", ""),

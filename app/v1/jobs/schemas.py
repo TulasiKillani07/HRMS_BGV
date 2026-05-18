@@ -74,3 +74,17 @@ class JobDeleteRequest(BaseModel):
 class JobActionRequest(BaseModel):
     """Schema for job actions (close, reopen, duplicate)"""
     jobId: str
+
+
+class ParseJDResponse(BaseModel):
+    """Schema for parsed job description response"""
+    title: str
+    department: str
+    location: str
+    type: str
+    experience: str
+    salary: str
+    skills: List[str]
+    description: str
+    deadline: Optional[str] = None
+    error: Optional[str] = None

@@ -1,11 +1,11 @@
 """
 Routes for Jobs ATS feature
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from typing import Optional
 
-# Import from main
-from main import requireAuth, logActivity
+# Import from core
+from core.dependencies import requireAuth, logActivity
 
 # Import from current module
 from .service import JobsService
@@ -689,4 +689,119 @@ async def reopen_job(
         raise HTTPException(
             status_code=500,
             detail=f"Error reopening job: {str(e)}"
+        )
+
+
+@router.post(
+    "/parseJobDescription",
+    summary="Parse Job Description with AI",
+    description="""
+    **Purpose:** Extract structured fields from a job description using AI.
+    
+    **Two Input Methods:**
+    1. **Upload File:** PDF, DOCX, or TXT file
+    2. **Paste Text:** Direct text input
+    
+    **Role Access:** ORG_HR, SPOC, HELPER
+    
+    **How to Use:**
+    - **Option A (File Upload):** Send `jd_file` as multipart/form-data
+    - **Option B (Text Input):** Send `jd_text` as form field
+    
+    **Response Example:**
+    ```json
+    {
+      "title": "Senior Python Backend Developer",
+      "department": "Engineering",
+      "location": "Hyderabad, India",
+      "type": "Full-time",
+      "experience": "4-6 years",
+      "salary": "₹18L - ₹24L per annum",
+      "skills": ["Python", "FastAPI", "MongoDB", "Docker", "AWS"],
+      "description": "We are looking for an experienced Python Backend Developer...",
+      "deadline": "2026-06-30"
+    }
+    ```
+    
+    **Next Steps:**
+    1. Frontend receives this parsed data
+    2. Pre-fills the job creation form
+    3. HR reviews/edits the fields
+    4. HR clicks "Create Job" → calls `/secure/createJob`
+    """,
+    responses={
+        200: {"description": "JD parsed successfully"},
+        400: {"description": "Invalid input or parsing failed"},
+        403: {"description": "Unauthorized access"}
+    }
+)
+async def parse_job_description(
+    jd_file: Optional[UploadFile] = File(None),
+    jd_text: Optional[str] = Form(None),
+    user: dict = Depends(requireAuth)
+):
+    """Parse job description from file or text using AI"""
+    from .jd_parser import parse_job_description_with_ai
+    from utils.resume_screening import extract_text_from_file
+    
+    role = user.get("role")
+    
+    # Access control
+    if role not in ["ORG_HR", "SPOC", "HELPER"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Only ORG_HR, SPOC, and HELPER can parse job descriptions"
+        )
+    
+    # Validate input
+    if not jd_file and not jd_text:
+        raise HTTPException(
+            status_code=400,
+            detail="Either jd_file or jd_text must be provided"
+        )
+    
+    try:
+        # Extract text from file or use provided text
+        if jd_file:
+            # Read file content
+            file_content = await jd_file.read()
+            filename = jd_file.filename.lower()
+            
+            # Validate file type
+            if not (filename.endswith('.pdf') or filename.endswith('.docx') or 
+                    filename.endswith('.doc') or filename.endswith('.txt')):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Only PDF, DOCX, and TXT files are supported"
+                )
+            
+            # Extract text from file
+            jd_text = extract_text_from_file(file_content, jd_file.filename)
+            
+            if not jd_text or len(jd_text.strip()) < 50:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Could not extract text from file or text is too short"
+                )
+        
+        # Parse JD with AI
+        parsed_data = await parse_job_description_with_ai(jd_text)
+        
+        # Log activity
+        await logActivity(
+            user,
+            "JD Parsed with AI",
+            f"Parsed job description for: {parsed_data.get('title', 'Unknown')}",
+            "Success"
+        )
+        
+        return parsed_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"ERROR in parseJobDescription: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error parsing job description: {str(e)}"
         )

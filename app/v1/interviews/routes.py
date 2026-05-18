@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from datetime import datetime
 from typing import Optional
 
-# Import from main
-from main import requireAuth, logActivity
+# Import from core
+from core.dependencies import requireAuth, logActivity
 
 # Import from current module
 from .service import InterviewService
@@ -860,7 +860,7 @@ async def mark_as_hired(
     "/initiateBGV",
     summary="Initiate Background Verification",
     description="""
-    **Purpose:** Create candidate entry in candidates collection for BGV.
+    **Purpose:** Create candidate entry in candidates collection for BGV with auto-filled data.
     
     **Role Access:** ORG_HR, SPOC only
     
@@ -879,27 +879,90 @@ async def mark_as_hired(
     }
     ```
     
+    **Auto-Fill Feature:**
+    The system automatically pre-fills candidate data from job seeker profile:
+    
+    **Always Auto-Filled (18 fields):**
+    - ✅ Name → firstName, lastName (auto-split)
+    - ✅ Email
+    - ✅ Phone
+    - ✅ **DOB** (Date of Birth)
+    - ✅ **Gender** (Male/Female/Other)
+    - ✅ **Father's Name**
+    - ✅ **Permanent Address** → address
+    - ✅ **District**
+    - ✅ **State**
+    - ✅ **Pincode**
+    - ✅ **Marital Status**
+    - ✅ Nationality (if provided)
+    - ✅ Mother's Name (if provided)
+    - ✅ PAN Number (if provided)
+    - ✅ Aadhaar Number (if provided)
+    - ✅ Passport Number (if provided)
+    - ✅ Driving License (if provided)
+    - ✅ Resume URL
+    
+    **Still Requires Manual Entry:**
+    - UAN Number only
+    
     **What Happens:**
-    1. Creates entry in existing `candidates` collection
-    2. Pre-fills data from job seeker profile:
-       - Name, Email, Phone
-       - Job Title, Organization
-    3. Remaining fields (Aadhaar, PAN, etc.) to be filled in BGV form
-    4. Returns candidateId for BGV form
+    1. Validates candidate is hired
+    2. Checks for duplicate email in organization
+    3. Fetches job seeker profile data
+    4. Creates candidate entry with **auto-filled fields**
+    5. Links to interview, application, job
+    6. Returns candidateId for BGV form
+    
+    **Benefits:**
+    - ⚡ Saves 5-10 minutes per candidate
+    - ✅ No manual data entry for pre-filled fields
+    - ✅ Reduces errors
+    - ✅ Faster onboarding
     
     **Validation:**
     - Candidate must be hired first
-    - Cannot initiate BGV twice
+    - Cannot initiate BGV twice for same candidate
+    - Email must be unique within organization
     
     **Behavior:**
     - Creates entry in existing `candidates` collection
-    - Pre-fills data from job seeker profile
-    - Returns candidateId
+    - Pre-fills 15+ fields from job seeker profile
+    - Returns candidateId for further processing
     """,
     responses={
-        200: {"description": "BGV initiated successfully"},
-        400: {"description": "Validation error"},
-        403: {"description": "Unauthorized"},
+        200: {
+            "description": "BGV initiated successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "BGV initiated successfully",
+                        "candidateId": "6a0032bf651c6dea3f1acdaa"
+                    }
+                }
+            }
+        },
+        400: {
+            "description": "Validation error",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "not_hired": {
+                            "summary": "Candidate not hired",
+                            "value": {"detail": "Candidate must be hired before initiating BGV"}
+                        },
+                        "already_initiated": {
+                            "summary": "BGV already initiated",
+                            "value": {"detail": "BGV already initiated for this candidate"}
+                        },
+                        "duplicate_email": {
+                            "summary": "Duplicate email",
+                            "value": {"detail": "A candidate with email arjun@gmail.com already exists in your organization's BGV system"}
+                        }
+                    }
+                }
+            }
+        },
+        403: {"description": "Unauthorized - Only ORG_HR and SPOC can initiate BGV"},
         404: {"description": "Interview not found"}
     }
 )
