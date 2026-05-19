@@ -4,6 +4,10 @@ import smtplib
 import os
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 FRONTEND_SELF_VERIFY_URL = "https://tfgverify.com/candidate/self-verification"
 
@@ -486,4 +490,200 @@ This is an automated email from BGV Verification System.
         
     except Exception as e:
         print(f"❌ Failed to send manual verification email: {e}")
+        return False
+
+
+def send_jobseeker_registration_email(
+    to_email: str,
+    name: str,
+    phone: str
+):
+    """
+    Send welcome email to job seeker after successful registration
+    
+    Args:
+        to_email: Job seeker's email
+        name: Job seeker's name
+        phone: Job seeker's phone number
+    """
+    
+    body = f"""
+Dear {name},
+
+Welcome to the Job Portal!
+
+Your registration has been completed successfully. You can now:
+
+✅ Browse and search for jobs
+✅ Apply to positions that match your skills
+✅ Track your application status
+✅ Upload and update your resume
+✅ Manage your profile
+
+Your Account Details:
+- Email: {to_email}
+- Phone: {phone}
+- Profile Status: Active
+
+Next Steps:
+1. Complete your profile for better job matches
+2. Upload your resume
+3. Start applying to jobs
+
+Login to your account: https://your-job-portal.com/login
+
+If you have any questions or need assistance, please contact our support team.
+
+Best regards,
+Job Portal Team
+"""
+
+    try:
+        send_email_smtp(
+            to_email=to_email,
+            subject="Welcome to Job Portal - Registration Successful",
+            body=body
+        )
+        print(f"✅ Registration email sent to {to_email}")
+        return True
+    except Exception as e:
+        print(f"❌ Failed to send registration email: {e}")
+        return False
+
+
+def send_interview_scheduled_email(
+    to_email: str,
+    recipient_name: str,
+    recipient_type: str,  # "jobseeker" or "interviewer"
+    job_title: str,
+    organization_name: str,
+    interview_date: str,
+    interview_time: str,
+    interview_mode: str,  # "online" or "offline"
+    interview_link: str = None,
+    interview_address: str = None,
+    candidate_name: str = None,  # For interviewer email
+    interviewer_name: str = None,  # For jobseeker email
+    additional_notes: str = None
+):
+    """
+    Send interview scheduled email to job seeker or interviewer
+    
+    Args:
+        to_email: Recipient's email
+        recipient_name: Name of recipient
+        recipient_type: "jobseeker" or "interviewer"
+        job_title: Job position title
+        organization_name: Company name
+        interview_date: Interview date (e.g., "2024-01-15")
+        interview_time: Interview time (e.g., "10:00 AM")
+        interview_mode: "online" or "offline"
+        interview_link: Meeting link (for online interviews)
+        interview_address: Office address (for offline interviews)
+        candidate_name: Candidate name (for interviewer email)
+        interviewer_name: Interviewer name (for jobseeker email)
+        additional_notes: Any additional instructions
+    """
+    
+    # Build interview details based on mode
+    interview_details = ""
+    if interview_mode.lower() == "online":
+        interview_details = f"""
+Interview Mode: Online
+Meeting Link: {interview_link or 'Will be shared shortly'}
+
+Please ensure:
+- Stable internet connection
+- Working camera and microphone
+- Quiet environment
+- Join 5 minutes before the scheduled time
+"""
+    else:  # offline
+        interview_details = f"""
+Interview Mode: In-Person
+Location: {interview_address or 'Will be shared shortly'}
+
+Please ensure:
+- Arrive 10 minutes before the scheduled time
+- Carry a valid ID proof
+- Bring a copy of your resume
+- Dress professionally
+"""
+    
+    # Build email based on recipient type
+    if recipient_type.lower() == "jobseeker":
+        subject = f"Interview Scheduled - {job_title} at {organization_name}"
+        greeting = f"Dear {recipient_name},"
+        intro = f"""
+Congratulations! Your interview has been scheduled for the position of {job_title} at {organization_name}.
+"""
+        interviewer_info = f"""
+Interviewer: {interviewer_name or 'Will be informed'}
+""" if interviewer_name else ""
+        
+        closing = """
+We look forward to meeting you. Good luck with your interview!
+
+If you need to reschedule or have any questions, please contact us as soon as possible.
+
+Best regards,
+{organization_name} Recruitment Team
+"""
+    
+    else:  # interviewer
+        subject = f"Interview Assignment - {candidate_name} for {job_title}"
+        greeting = f"Dear {recipient_name},"
+        intro = f"""
+You have been assigned to conduct an interview for the position of {job_title}.
+"""
+        interviewer_info = f"""
+Candidate: {candidate_name or 'N/A'}
+"""
+        
+        closing = """
+Please review the candidate's profile before the interview and prepare relevant questions.
+
+If you need to reschedule or have any questions, please contact the HR team.
+
+Best regards,
+{organization_name} HR Team
+"""
+    
+    # Additional notes section
+    notes_section = ""
+    if additional_notes:
+        notes_section = f"""
+Additional Notes:
+{additional_notes}
+"""
+    
+    # Build complete email body
+    body = f"""{greeting}
+
+{intro}
+
+Interview Details:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Position: {job_title}
+Organization: {organization_name}
+Date: {interview_date}
+Time: {interview_time}
+{interviewer_info}
+{interview_details}
+{notes_section}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{closing.format(organization_name=organization_name)}
+"""
+
+    try:
+        send_email_smtp(
+            to_email=to_email,
+            subject=subject,
+            body=body
+        )
+        print(f"✅ Interview scheduled email sent to {to_email} ({recipient_type})")
+        return True
+    except Exception as e:
+        print(f"❌ Failed to send interview email: {e}")
         return False

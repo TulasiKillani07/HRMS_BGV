@@ -25,6 +25,7 @@ pdf2image
 pytesseract
 
 openai
+groq
 numpy
 sentence-transformers
 ollama

@@ -329,6 +329,18 @@ async def register(body: JobSeekerRegisterRequest, response: Response):
             path="/"
         )
         
+        # Send welcome email
+        try:
+            from utils.email_utils import send_jobseeker_registration_email
+            send_jobseeker_registration_email(
+                to_email=job_seeker["email"],
+                name=job_seeker["name"],
+                phone=job_seeker["phone"]
+            )
+        except Exception as e:
+            print(f"⚠️ Failed to send registration email: {e}")
+            # Don't fail registration if email fails
+        
         # Return normal dict (NOT JSONResponse)
         return {
             "message": "Registration successful",

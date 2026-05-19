@@ -919,9 +919,205 @@ from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from bson import ObjectId
 
-@app.get("/dashboard")
+@app.get(
+    "/dashboard",
+    summary="Get Dashboard Analytics",
+    description="""
+    **Get comprehensive dashboard analytics based on user role.**
+    
+    ## Role-Based Analytics:
+    
+    ### SUPER_ADMIN / SUPER_SPOC
+    - Total Organizations
+    - Total Verification Requests (all orgs or filtered by organizationId)
+    - Ongoing Verifications
+    - Completed Verifications
+    - Failed Verifications
+    - Stage Breakdown (primary, secondary, final)
+    - Can filter by specific organizationId
+    
+    ### SUPER_ADMIN_HELPER
+    - Accessible Organizations Count
+    - Total Verification Requests (only from assigned organizations)
+    - Ongoing Verifications
+    - Completed Verifications
+    - Failed Verifications
+    - Stage Breakdown
+    - Can filter by specific organizationId (must be in accessible list)
+    
+    ### SPOC / ORG_HR
+    - Total Employees in Organization
+    - Total Verification Requests (own organization only)
+    - Ongoing Verifications
+    - Completed Verifications
+    - Failed Verifications
+    - Stage Breakdown
+    - Can only view own organization data
+    
+    ### HELPER / EMPLOYEE
+    - Total Assigned Verifications
+    - Ongoing Verifications (assigned to user)
+    - Completed Verifications (assigned to user)
+    - Failed Verifications (assigned to user)
+    - Stage Breakdown (assigned verifications only)
+    - Cannot filter by organizationId
+    
+    ## Query Parameters:
+    - **organizationId** (optional): Filter analytics by specific organization
+      - SUPER_ADMIN/SUPER_SPOC: Can filter by any organization
+      - SUPER_ADMIN_HELPER: Can filter by organizations in their accessible list
+      - SPOC/ORG_HR: Can only view their own organization (403 if different org requested)
+      - HELPER/EMPLOYEE: Cannot use this filter
+    
+    ## Permissions Required:
+    - `dashboard:view` permission
+    
+    ## Response Structure:
+    Returns role-specific statistics with stage breakdown.
+    """,
+    responses={
+        200: {
+            "description": "Dashboard analytics retrieved successfully",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "super_admin": {
+                            "summary": "SUPER_ADMIN Response",
+                            "value": {
+                                "role": "SUPER_ADMIN",
+                                "stats": {
+                                    "filteredByOrganization": "ALL",
+                                    "totalOrganizations": 25,
+                                    "totalRequests": 1500,
+                                    "ongoingVerifications": 450,
+                                    "completedVerifications": 980,
+                                    "failedVerifications": 70,
+                                    "stageBreakdown": {
+                                        "primary": 300,
+                                        "secondary": 200,
+                                        "final": 150
+                                    }
+                                }
+                            }
+                        },
+                        "super_admin_with_filter": {
+                            "summary": "SUPER_ADMIN with Organization Filter",
+                            "value": {
+                                "role": "SUPER_ADMIN",
+                                "stats": {
+                                    "filteredByOrganization": "507f1f77bcf86cd799439011",
+                                    "totalOrganizations": 25,
+                                    "totalRequests": 85,
+                                    "ongoingVerifications": 20,
+                                    "completedVerifications": 60,
+                                    "failedVerifications": 5,
+                                    "stageBreakdown": {
+                                        "primary": 15,
+                                        "secondary": 10,
+                                        "final": 8
+                                    }
+                                }
+                            }
+                        },
+                        "super_admin_helper": {
+                            "summary": "SUPER_ADMIN_HELPER Response",
+                            "value": {
+                                "role": "SUPER_ADMIN_HELPER",
+                                "stats": {
+                                    "filteredByOrganization": "ALL_ASSIGNED",
+                                    "accessibleOrganizations": 5,
+                                    "totalRequests": 320,
+                                    "ongoingVerifications": 95,
+                                    "completedVerifications": 210,
+                                    "failedVerifications": 15,
+                                    "stageBreakdown": {
+                                        "primary": 60,
+                                        "secondary": 45,
+                                        "final": 30
+                                    }
+                                }
+                            }
+                        },
+                        "org_hr": {
+                            "summary": "ORG_HR / SPOC Response",
+                            "value": {
+                                "role": "ORG_HR",
+                                "stats": {
+                                    "filteredByOrganization": "507f1f77bcf86cd799439011",
+                                    "totalEmployees": 150,
+                                    "totalRequests": 85,
+                                    "ongoingVerifications": 20,
+                                    "completedVerifications": 60,
+                                    "failedVerifications": 5,
+                                    "stageBreakdown": {
+                                        "primary": 15,
+                                        "secondary": 10,
+                                        "final": 8
+                                    }
+                                }
+                            }
+                        },
+                        "helper": {
+                            "summary": "HELPER / EMPLOYEE Response",
+                            "value": {
+                                "role": "HELPER",
+                                "stats": {
+                                    "totalAssigned": 45,
+                                    "ongoingVerifications": 12,
+                                    "completedVerifications": 30,
+                                    "failedVerifications": 3,
+                                    "stageBreakdown": {
+                                        "primary": 8,
+                                        "secondary": 5,
+                                        "final": 4
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        403: {
+            "description": "Forbidden - User not authorized to view requested organization",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "unauthorized_org": {
+                            "summary": "Unauthorized Organization Access",
+                            "value": {
+                                "detail": "You are not authorized to view dashboard of org 507f1f77bcf86cd799439011"
+                            }
+                        },
+                        "unknown_role": {
+                            "summary": "Unknown Role",
+                            "value": {
+                                "detail": "Unknown or unauthorized role"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        401: {
+            "description": "Unauthorized - Invalid or missing session",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "no session cookie"
+                    }
+                }
+            }
+        }
+    },
+    tags=["Dashboard Analytics"]
+)
 async def getDashboard(
-    organizationId: str = Query(None, description="Optional organizationId filter for authorized roles"),
+    organizationId: str = Query(
+        None, 
+        description="Optional organizationId filter. SUPER_ADMIN can filter by any org, SUPER_ADMIN_HELPER by accessible orgs, SPOC/ORG_HR by own org only. HELPER/EMPLOYEE cannot use this filter.",
+        example="507f1f77bcf86cd799439011"
+    ),
     user: dict = Depends(requirePermission(["dashboard:view"]))
 ):
     role = user.get("role")
@@ -1104,6 +1300,432 @@ async def getDashboard(
     # ---------------------------------------------------
     else:
         raise HTTPException(status_code=403, detail="Unknown role or not authorized")
+
+
+# -------------------------------
+# Jobs Overview Analytics
+# -------------------------------
+@app.get(
+    "/secure/jobsOverview",
+    summary="Get Jobs Overview Analytics",
+    description="""
+    **Get comprehensive jobs overview analytics with candidate stage tracking.**
+    
+    ## Features:
+    - **Summary Statistics**: Total jobs, open positions, total applicants, total hired
+    - **Job-Level Details**: Each job with complete candidate stage breakdown
+    - **Candidate Stage Tracking**: Track candidates across all stages (Applied, Resume Shortlist, Interview rounds, Hired, Rejected)
+    - **Interview Round Details**: See candidates in each interview round (Round 1-4)
+    - **Organization Filtering**: SUPER_ADMIN can filter by organization
+    
+    ## Role-Based Access:
+    
+    ### SUPER_ADMIN / SUPER_SPOC
+    - View all jobs across all organizations
+    - Can filter by specific organizationId
+    - See complete analytics for all companies
+    
+    ### ORG_HR / SPOC
+    - View only their organization's jobs
+    - Cannot access other organizations' data
+    - See complete analytics for their company
+    
+    ## Response Structure:
+    - **summary**: Overall statistics (total jobs, open positions, applicants, hired)
+    - **jobs**: Array of job objects with:
+      - Job details (title, department, location, status, deadline)
+      - Organization info
+      - Stage breakdown (Applied, Resume Shortlist, Interview, Hired, Rejected)
+      - Interview round breakdown (Round 1-4 with Pending/Scheduled/Passed/Failed counts)
+      - Candidate lists for each stage with full details
+    
+    ## Query Parameters:
+    - **organizationId** (optional): Filter by specific organization (SUPER_ADMIN only)
+    - **status** (optional): Filter by job status (open, closed, draft)
+    - **includeDetails** (optional): Include full candidate details in response (default: true)
+    """,
+    responses={
+        200: {
+            "description": "Jobs overview analytics retrieved successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "summary": {
+                            "totalJobs": 6,
+                            "openPositions": 4,
+                            "totalApplicants": 137,
+                            "totalHired": 5
+                        },
+                        "jobs": [
+                            {
+                                "jobId": "507f1f77bcf86cd799439011",
+                                "title": "Senior ML Engineer",
+                                "department": "Engineering",
+                                "location": "Hyderabad",
+                                "type": "Full-time",
+                                "status": "open",
+                                "deadline": "2026-06-01T00:00:00Z",
+                                "orgId": "507f1f77bcf86cd799439012",
+                                "orgName": "TFG Technologies",
+                                "createdAt": "2026-05-01T10:00:00Z",
+                                "stageBreakdown": {
+                                    "Applied": 24,
+                                    "Resume Shortlist": 8,
+                                    "Interview": 5,
+                                    "Hired": 1,
+                                    "Rejected": 3
+                                },
+                                "interviewRoundBreakdown": {
+                                    "Round 1": {"Pending": 2, "Scheduled": 1, "Passed": 2, "Failed": 0},
+                                    "Round 2": {"Pending": 1, "Scheduled": 0, "Passed": 1, "Failed": 0},
+                                    "Round 3": {"Pending": 0, "Scheduled": 0, "Passed": 0, "Failed": 0},
+                                    "Round 4": {"Pending": 0, "Scheduled": 0, "Passed": 0, "Failed": 0}
+                                },
+                                "candidates": {
+                                    "Applied": [],
+                                    "Resume Shortlist": [],
+                                    "Interview": [],
+                                    "Hired": [],
+                                    "Rejected": []
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        403: {
+            "description": "Forbidden - User not authorized",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "You are not authorized to view this organization's jobs"}
+                }
+            }
+        },
+        401: {
+            "description": "Unauthorized - Invalid or missing session",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "no session cookie"}
+                }
+            }
+        }
+    },
+    tags=["Jobs Analytics"]
+)
+async def getJobsOverview(
+    organizationId: str = Query(None, description="Filter by organization ID (SUPER_ADMIN only)"),
+    status: str = Query(None, description="Filter by job status (open, closed, draft)", pattern="^(open|closed|draft)$"),
+    includeDetails: bool = Query(True, description="Include full candidate details in response"),
+    user: dict = Depends(requireAuth)
+):
+    """
+    Get comprehensive jobs overview analytics with candidate stage tracking
+    """
+    from core.database import jobsCol, applicationsCol, interviewsCol, jobSeekersCol, orgsCol
+    
+    role = user.get("role")
+    userOrgId = user.get("organizationId")
+    
+    # ---------------------------------------------------
+    # STEP 1: Role-based access control
+    # ---------------------------------------------------
+    if role in ["SUPER_ADMIN", "SUPER_SPOC"]:
+        # Can view all organizations or filter by specific org
+        jobsQuery = {}
+        if organizationId:
+            jobsQuery["orgId"] = organizationId
+    elif role in ["ORG_HR", "SPOC"]:
+        # Can only view their own organization
+        if organizationId and organizationId != userOrgId:
+            raise HTTPException(
+                status_code=403,
+                detail="You are not authorized to view this organization's jobs"
+            )
+        jobsQuery = {"orgId": userOrgId}
+    else:
+        raise HTTPException(
+            status_code=403,
+            detail="You are not authorized to access jobs overview"
+        )
+    
+    # Add status filter if provided
+    if status:
+        jobsQuery["status"] = status
+    
+    # Add isDeleted filter
+    jobsQuery["isDeleted"] = False
+    
+    # ---------------------------------------------------
+    # STEP 2: Fetch all jobs
+    # ---------------------------------------------------
+    try:
+        jobs_cursor = jobsCol.find(jobsQuery).sort("createdAt", -1)
+        jobs_list = await jobs_cursor.to_list(length=None)
+        
+        if not jobs_list:
+            return JSONResponse(status_code=200, content=jsonable_encoder({
+                "summary": {
+                    "totalJobs": 0,
+                    "openPositions": 0,
+                    "totalApplicants": 0,
+                    "totalHired": 0
+                },
+                "jobs": []
+            }))
+        
+        # ---------------------------------------------------
+        # STEP 3: Build summary statistics
+        # ---------------------------------------------------
+        totalJobs = len(jobs_list)
+        openPositions = sum(1 for job in jobs_list if job.get("status") == "open")
+        totalApplicants = 0
+        totalHired = 0
+        
+        # ---------------------------------------------------
+        # STEP 4: Process each job with detailed analytics
+        # ---------------------------------------------------
+        jobs_analytics = []
+        
+        for job in jobs_list:
+            jobId = str(job["_id"])
+            
+            # Fetch all applications for this job
+            applications = await applicationsCol.find({
+                "jobId": jobId,
+                "isDeleted": False
+            }).to_list(length=None)
+            
+            # Fetch all interviews for this job
+            interviews = await interviewsCol.find({
+                "jobId": jobId,
+                "isDeleted": False
+            }).to_list(length=None)
+            
+            # Initialize stage breakdown (cumulative counts)
+            stageBreakdown = {
+                "Applied": 0,
+                "Resume Shortlist": 0,
+                "Interview": 0,
+                "Hired": 0,
+                "Rejected": 0
+            }
+            
+            # Initialize interview round breakdown
+            interviewRoundBreakdown = {
+                "Round 1": {"Pending": 0, "Scheduled": 0, "Passed": 0, "Failed": 0},
+                "Round 2": {"Pending": 0, "Scheduled": 0, "Passed": 0, "Failed": 0},
+                "Round 3": {"Pending": 0, "Scheduled": 0, "Passed": 0, "Failed": 0},
+                "Round 4": {"Pending": 0, "Scheduled": 0, "Passed": 0, "Failed": 0}
+            }
+            
+            # Initialize candidate lists
+            candidatesByStage = {
+                "Applied": [],
+                "Resume Shortlist": [],
+                "Interview": [],
+                "Hired": [],
+                "Rejected": []
+            }
+            
+            # Track processed candidates to avoid double counting
+            processedCandidates = set()
+            
+            # Process applications - CUMULATIVE COUNTING
+            for app in applications:
+                candidateKey = app.get("jobSeekerId") or app.get("candidateId") or str(app["_id"])
+                
+                # Count cumulative stages from stageHistory
+                stageHistory = app.get("stageHistory", [])
+                
+                # If no stage history, use current stage
+                if not stageHistory:
+                    currentStage = app.get("stage", "Applied")
+                    if currentStage in stageBreakdown:
+                        stageBreakdown[currentStage] += 1
+                else:
+                    # Count all stages the candidate has been through
+                    stagesVisited = set()
+                    for history in stageHistory:
+                        stage = history.get("stage")
+                        if stage and stage in stageBreakdown:
+                            stagesVisited.add(stage)
+                    
+                    # Increment count for each stage visited
+                    for stage in stagesVisited:
+                        stageBreakdown[stage] += 1
+                
+                # Get candidate details for current stage
+                if includeDetails:
+                    currentStage = app.get("stage", "Applied")
+                    candidateInfo = {
+                        "applicationId": str(app["_id"]),
+                        "stage": currentStage,
+                        "source": app.get("source", "MANUAL"),
+                        "aiScore": app.get("aiScore"),
+                        "appliedAt": app.get("appliedAt").isoformat() if app.get("appliedAt") else None
+                    }
+                    
+                    # Get job seeker details if available
+                    if app.get("jobSeekerId"):
+                        jobSeeker = await jobSeekersCol.find_one({"_id": ObjectId(app["jobSeekerId"])})
+                        if jobSeeker:
+                            candidateInfo.update({
+                                "name": jobSeeker.get("name"),
+                                "email": jobSeeker.get("email"),
+                                "phone": jobSeeker.get("phone"),
+                                "resumeUrl": jobSeeker.get("resumeUrl")
+                            })
+                    elif app.get("candidateName"):
+                        # HR-added candidate
+                        candidateInfo.update({
+                            "name": app.get("candidateName"),
+                            "email": app.get("candidateEmail"),
+                            "phone": app.get("candidatePhone"),
+                            "resumeUrl": app.get("resumeUrl")
+                        })
+                    
+                    # Add to current stage list
+                    if currentStage in candidatesByStage:
+                        candidatesByStage[currentStage].append(candidateInfo)
+                
+                # Mark as processed
+                processedCandidates.add(candidateKey)
+            
+            # Process interviews - CUMULATIVE COUNTING
+            for interview in interviews:
+                candidateKey = interview.get("jobSeekerId") or interview.get("candidateId") or str(interview["_id"])
+                
+                # For interviews, candidate has been through: Applied → Resume Shortlist → Interview
+                # Count them in all previous stages if not already counted from applications
+                if candidateKey not in processedCandidates:
+                    stageBreakdown["Applied"] += 1
+                    stageBreakdown["Resume Shortlist"] += 1
+                    stageBreakdown["Interview"] += 1
+                else:
+                    # If already counted in applications, just add Interview stage
+                    stageBreakdown["Interview"] += 1
+                
+                # Check if hired
+                if interview.get("hired"):
+                    stageBreakdown["Hired"] += 1
+                    totalHired += 1
+                    
+                    if includeDetails:
+                        candidateInfo = {
+                            "interviewId": str(interview["_id"]),
+                            "stage": "Hired",
+                            "hiredAt": interview.get("hiredAt").isoformat() if interview.get("hiredAt") else None
+                        }
+                        
+                        # Get job seeker details
+                        if interview.get("jobSeekerId"):
+                            jobSeeker = await jobSeekersCol.find_one({"_id": ObjectId(interview["jobSeekerId"])})
+                            if jobSeeker:
+                                candidateInfo.update({
+                                    "name": jobSeeker.get("name"),
+                                    "email": jobSeeker.get("email"),
+                                    "phone": jobSeeker.get("phone")
+                                })
+                        
+                        candidatesByStage["Hired"].append(candidateInfo)
+                
+                # Check if rejected
+                elif interview.get("rejected"):
+                    stageBreakdown["Rejected"] += 1
+                    
+                    if includeDetails:
+                        candidateInfo = {
+                            "interviewId": str(interview["_id"]),
+                            "stage": "Rejected",
+                            "rejectedAt": interview.get("rejectedAt").isoformat() if interview.get("rejectedAt") else None,
+                            "rejectionReason": interview.get("rejectionReason", ""),
+                            "rejectedAtRound": interview.get("rejectedAtRound")
+                        }
+                        
+                        # Get job seeker details
+                        if interview.get("jobSeekerId"):
+                            jobSeeker = await jobSeekersCol.find_one({"_id": ObjectId(interview["jobSeekerId"])})
+                            if jobSeeker:
+                                candidateInfo.update({
+                                    "name": jobSeeker.get("name"),
+                                    "email": jobSeeker.get("email"),
+                                    "phone": jobSeeker.get("phone")
+                                })
+                        
+                        candidatesByStage["Rejected"].append(candidateInfo)
+                
+                # Process interview rounds
+                rounds = interview.get("rounds", [])
+                for round_data in rounds:
+                    roundNumber = round_data.get("roundNumber")
+                    roundStatus = round_data.get("status", "Pending")
+                    
+                    if roundNumber and 1 <= roundNumber <= 4:
+                        roundKey = f"Round {roundNumber}"
+                        if roundStatus in interviewRoundBreakdown[roundKey]:
+                            interviewRoundBreakdown[roundKey][roundStatus] += 1
+            
+            # Update total applicants (count unique candidates)
+            totalApplicants += len(processedCandidates) + len([i for i in interviews if (i.get("jobSeekerId") or i.get("candidateId") or str(i["_id"])) not in processedCandidates])
+            
+            # Build job analytics object
+            jobAnalytics = {
+                "jobId": jobId,
+                "title": job.get("title"),
+                "department": job.get("department"),
+                "location": job.get("location"),
+                "type": job.get("type"),
+                "status": job.get("status"),
+                "deadline": job.get("deadline").isoformat() if job.get("deadline") else None,
+                "orgId": job.get("orgId"),
+                "orgName": job.get("orgName"),
+                "createdAt": job.get("createdAt").isoformat() if job.get("createdAt") else None,
+                "stageBreakdown": stageBreakdown,
+                "interviewRoundBreakdown": interviewRoundBreakdown
+            }
+            
+            # Add candidate details if requested
+            if includeDetails:
+                jobAnalytics["candidates"] = candidatesByStage
+            
+            jobs_analytics.append(jobAnalytics)
+        
+        # ---------------------------------------------------
+        # STEP 5: Build response
+        # ---------------------------------------------------
+        response = {
+            "summary": {
+                "totalJobs": totalJobs,
+                "openPositions": openPositions,
+                "totalApplicants": totalApplicants,
+                "totalHired": totalHired
+            },
+            "jobs": jobs_analytics
+        }
+        
+        # Log activity
+        await logActivity(
+            user,
+            "View Jobs Overview",
+            f"{role} viewed jobs overview analytics" + (f" for org {organizationId}" if organizationId else ""),
+            "Success"
+        )
+        
+        return JSONResponse(status_code=200, content=jsonable_encoder(response))
+        
+    except Exception as e:
+        await logActivity(
+            user,
+            "View Jobs Overview Failed",
+            f"Error: {str(e)}",
+            "Error"
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch jobs overview: {str(e)}"
+        )
+
 
 # -------------------------------
 # Update Organization
@@ -5550,13 +6172,127 @@ async def getActivityLogs(user: dict = Depends(requireAuth)):
     )
 
 # get specific logs
-@app.get("/secure/recentImportantActivity")
+@app.get(
+    "/secure/recentImportantActivity",
+    summary="Get Recent Important Activity Logs",
+    description="""
+    **Get recent important activity logs based on user role and organization.**
+    
+    ## Features:
+    - Fetches recent important activity logs from the system
+    - Filters by important action types (jobs, applications, interviews, authentication, etc.)
+    - Role-based access control
+    - Organization-level filtering
+    - Sorted by timestamp (most recent first)
+    
+    ## Role-Based Access:
+    
+    ### SUPER_ADMIN / SUPER_SPOC
+    - ✅ View all activity logs across all organizations
+    - ✅ No filtering applied
+    
+    ### SUPER_ADMIN_HELPER
+    - ✅ View logs only from assigned organizations
+    - ✅ Filtered by accessibleOrganizations list
+    
+    ### ORG_HR / SPOC
+    - ✅ View logs only from their own organization
+    - ✅ Filtered by organizationId
+    
+    ### HELPER
+    - ❌ Access denied (403 Forbidden)
+    
+    ## Important Log Types Included:
+    - **Authentication**: Login, Logout
+    - **Jobs**: Created, Updated, Deleted, Closed, Reopened
+    - **Applications**: Stage Updated, Bulk Update, Deleted
+    - **Interviews**: Created, Scheduled, Rescheduled, Updated
+    - **Hiring**: Offer Extended, Candidate Hired, Candidate Rejected
+    - **BGV**: Verification Initiated, Status Updated
+    - **Organizations**: Created, Updated, Deleted
+    - **Users**: Added, Updated, Deleted
+    - **Errors**: Unauthorized attempts, Failed operations
+    
+    ## Query Parameters:
+    - **noOfLogs** (optional): Number of logs to fetch (default: 50, max: 200)
+    
+    ## Response:
+    Returns array of activity logs with:
+    - User information (name, email, role)
+    - Organization information
+    - Action type and description
+    - Timestamp (IST)
+    - Status (Success, Error, Info, Warning)
+    """,
+    responses={
+        200: {
+            "description": "Activity logs retrieved successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "requestedLogs": 50,
+                        "returnedLogs": 15,
+                        "includedLogTypes": ["Job Created", "Interview Scheduled", "..."],
+                        "logs": [
+                            {
+                                "_id": "507f1f77bcf86cd799439011",
+                                "userId": "507f1f77bcf86cd799439012",
+                                "userEmail": "hr@tfg.com",
+                                "userName": "John Doe",
+                                "userRole": "ORG_HR",
+                                "organizationId": "507f1f77bcf86cd799439013",
+                                "organizationName": "TFG Technologies",
+                                "action": "Job Created",
+                                "description": "Created job: Senior ML Engineer",
+                                "status": "Success",
+                                "timestamp": "2026-05-19T14:30:00+05:30",
+                                "timestampUTC": "2026-05-19T09:00:00Z"
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        403: {
+            "description": "Forbidden - User not authorized to view logs",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "helper_denied": {
+                            "summary": "HELPER Role Denied",
+                            "value": {"detail": "You are not allowed to view logs"}
+                        },
+                        "no_orgs_assigned": {
+                            "summary": "No Organizations Assigned",
+                            "value": {"detail": "No organizations assigned to this helper"}
+                        }
+                    }
+                }
+            }
+        },
+        401: {
+            "description": "Unauthorized - Invalid or missing session",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "no session cookie"}
+                }
+            }
+        }
+    },
+    tags=["Activity Logs"]
+)
 async def getRecentImportantActivity(
-    noOfLogs: int = 50,
+    noOfLogs: int = Query(
+        50, 
+        description="Number of logs to fetch (max: 200)",
+        ge=1,
+        le=200
+    ),
     user: dict = Depends(requireAuth)
 ):
 
     IMPORTANT_LOG_TYPES = [
+        # Legacy BGV Actions
         "Add Candidate",
         "Self Verification Email Sent",
         "Verification Check Executed",
@@ -5566,10 +6302,7 @@ async def getRecentImportantActivity(
         "Update Verification Status",
         "Unauthorized Attempt",
         "Error",
-        "Add Candidate",
         "Stage Initialized",
-        "Login",
-        "Logout",
         "Password Reset Failed",
         "Update Organization Failed",
         "Updated Organization",
@@ -5582,7 +6315,54 @@ async def getRecentImportantActivity(
         "Retry Check",
         "Upload Logo Failed",
         "Register Organization Failed",
-        "Created Organization"
+        "Created Organization",
+        
+        # Authentication Actions
+        "User Login",
+        "User Logout",
+        
+        # Dashboard Actions
+        "View Dashboard",
+        
+        # Jobs ATS Actions
+        "Job Created",
+        "Job Updated",
+        "Job Deleted",
+        "Job Duplicated",
+        "Job Closed",
+        "Job Reopened",
+        "JD Parsed with AI",
+        
+        # Applications Actions
+        "Application Stage Updated",
+        "Bulk Stage Update",
+        "Application Deleted",
+        "Smart Shortlist Applied",
+        
+        # Interviews Actions
+        "Interview Created",
+        "Round Scheduled",
+        "Round Rescheduled",
+        "Round Updated",
+        "Offer Extended",
+        "Candidate Rejected",
+        "Candidate Hired",
+        "BGV Initiated",
+        
+        # Job Seeker Actions
+        "Job Seeker Registered",
+        "Job Seeker Login",
+        "Job Seeker Profile Updated",
+        "Resume Uploaded",
+        "Job Application Submitted",
+        
+        # Email Actions
+        "Registration Email Sent",
+        "Interview Scheduled Email Sent",
+        "Interview Rescheduled Email Sent",
+        
+        # Jobs Overview Actions
+        "View Jobs Overview"
     ]
 
     role = user.get("role")

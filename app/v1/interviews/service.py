@@ -180,10 +180,14 @@ class InterviewService:
         interviewer_id: str,
         scheduled_at: datetime,
         user_org_id: str,
-        user_email: str
+        user_email: str,
+        interview_mode: str = "online",
+        interview_link: Optional[str] = None,
+        interview_address: Optional[str] = None,
+        additional_notes: Optional[str] = None
     ) -> Optional[Dict]:
         """
-        Schedule an interview round
+        Schedule an interview round and send email notifications
         
         Args:
             interview_id: Interview ID
@@ -192,11 +196,16 @@ class InterviewService:
             scheduled_at: Scheduled date/time
             user_org_id: Organization ID from JWT
             user_email: Email of user scheduling
+            interview_mode: "online" or "offline"
+            interview_link: Meeting link for online interviews
+            interview_address: Office address for offline interviews
+            additional_notes: Additional instructions
             
         Returns:
             Updated interview or None
         """
-        from core.database import interviewersCol
+        from core.database import interviewersCol, orgsCol
+        from utils.email_utils import send_interview_scheduled_email
         
         # Get interview
         interview = await interviewsCol.find_one({
@@ -253,6 +262,10 @@ class InterviewService:
                     f"{update_path}.status": "Scheduled",
                     f"{update_path}.updatedBy": user_email,
                     f"{update_path}.updatedAt": now,
+                    f"{update_path}.interviewMode": interview_mode,
+                    f"{update_path}.interviewLink": interview_link,
+                    f"{update_path}.interviewAddress": interview_address,
+                    f"{update_path}.additionalNotes": additional_notes,
                     "updatedAt": now
                 }
             }
@@ -260,6 +273,287 @@ class InterviewService:
         
         # Get updated interview
         updated = await self.get_interview(interview_id, user_org_id)
+        
+        # Send email notifications (non-blocking)
+        try:
+            # Fetch job seeker details
+            job_seeker = await jobSeekersCol.find_one({
+                "_id": ObjectId(interview["jobSeekerId"]),
+                "isActive": True
+            })
+            
+            # Fetch job details
+            job = await jobsCol.find_one({
+                "_id": ObjectId(interview["jobId"])
+            })
+            
+            # Fetch organization details
+            org = await orgsCol.find_one({
+                "_id": ObjectId(user_org_id)
+            })
+            
+            if job_seeker and job and org:
+                job_seeker_name = job_seeker.get("name", "Candidate")
+                job_seeker_email = job_seeker.get("email")
+                job_title = job.get("title", "Position")
+                org_name = org.get("organizationName", "Company")
+                
+                # Format date and time
+                interview_date = scheduled_at.strftime("%B %d, %Y")  # e.g., "May 18, 2026"
+                interview_time = scheduled_at.strftime("%I:%M %p")   # e.g., "10:00 AM"
+                
+                # Get round name
+                round_name = self.ROUND_NAMES.get(round_number, f"Round {round_number}")
+                
+                # Send email to job seeker
+                if job_seeker_email:
+                    send_interview_scheduled_email(
+                        to_email=job_seeker_email,
+                        recipient_name=job_seeker_name,
+                        recipient_type="jobseeker",
+                        job_title=f"{job_title} - {round_name}",
+                        organization_name=org_name,
+                        interview_date=interview_date,
+                        interview_time=interview_time,
+                        interview_mode=interview_mode,
+                        interview_link=interview_link,
+                        interview_address=interview_address,
+                        interviewer_name=interviewer_name,
+                        additional_notes=additional_notes
+                    )
+                    print(f"✅ Interview email sent to job seeker: {job_seeker_email}")
+                
+                # Send email to interviewer
+                if interviewer_email:
+                    send_interview_scheduled_email(
+                        to_email=interviewer_email,
+                        recipient_name=interviewer_name,
+                        recipient_type="interviewer",
+                        job_title=f"{job_title} - {round_name}",
+                        organization_name=org_name,
+                        interview_date=interview_date,
+                        interview_time=interview_time,
+                        interview_mode=interview_mode,
+                        interview_link=interview_link,
+                        interview_address=interview_address,
+                        candidate_name=job_seeker_name,
+                        additional_notes=additional_notes
+                    )
+                    print(f"✅ Interview email sent to interviewer: {interviewer_email}")
+            
+        except Exception as e:
+            # Email sending should not block the scheduling process
+            print(f"⚠️ Failed to send interview emails: {e}")
+        
+        return updated
+    
+    async def reschedule_round(
+        self,
+        interview_id: str,
+        round_number: int,
+        interviewer_id: Optional[str] = None,
+        scheduled_at: Optional[datetime] = None,
+        user_org_id: str = None,
+        user_email: str = None,
+        interview_mode: Optional[str] = None,
+        interview_link: Optional[str] = None,
+        interview_address: Optional[str] = None,
+        additional_notes: Optional[str] = None
+    ) -> Optional[Dict]:
+        """
+        Reschedule an already scheduled interview round
+        
+        Args:
+            interview_id: Interview ID
+            round_number: Round number (1-4)
+            interviewer_id: New interviewer ID (optional - keep existing if not provided)
+            scheduled_at: New scheduled date/time (optional - keep existing if not provided)
+            user_org_id: Organization ID from JWT
+            user_email: Email of user rescheduling
+            interview_mode: New interview mode (optional)
+            interview_link: New meeting link (optional)
+            interview_address: New office address (optional)
+            additional_notes: New additional instructions (optional)
+            
+        Returns:
+            Updated interview or None
+        """
+        from core.database import interviewersCol, orgsCol
+        from utils.email_utils import send_interview_scheduled_email
+        
+        # Get interview
+        interview = await interviewsCol.find_one({
+            "_id": ObjectId(interview_id),
+            "orgId": user_org_id,
+            "isDeleted": False
+        })
+        
+        if not interview:
+            raise ValueError("Interview not found")
+        
+        # Check if interview is rejected or hired
+        if interview.get("rejected") or interview.get("hired"):
+            raise ValueError("Cannot reschedule round for rejected or hired candidate")
+        
+        # Get current round
+        current_round = interview["rounds"][round_number - 1]
+        
+        # Check if round is already scheduled
+        if current_round["status"] != "Scheduled":
+            raise ValueError(f"Round {round_number} is not scheduled yet. Use scheduleRound endpoint first.")
+        
+        # Prepare update fields - keep existing values if not provided
+        update_fields = {}
+        now = datetime.now(timezone.utc)
+        update_path = f"rounds.{round_number - 1}"
+        
+        # Handle interviewer change
+        if interviewer_id:
+            # Validate new interviewer
+            interviewer = await interviewersCol.find_one({
+                "_id": ObjectId(interviewer_id),
+                "organizationId": user_org_id,
+                "isDeleted": False
+            })
+            
+            if not interviewer:
+                raise ValueError("Interviewer not found")
+            
+            if not interviewer.get("isActive"):
+                raise ValueError("Interviewer is not active")
+            
+            if not interviewer.get("isAvailable"):
+                raise ValueError("Interviewer is not available")
+            
+            update_fields[f"{update_path}.interviewerId"] = interviewer_id
+            update_fields[f"{update_path}.interviewer"] = interviewer.get("name")
+            update_fields[f"{update_path}.interviewerEmail"] = interviewer.get("email")
+        else:
+            # Keep existing interviewer
+            interviewer_id = current_round.get("interviewerId")
+            interviewer = await interviewersCol.find_one({"_id": ObjectId(interviewer_id)})
+        
+        # Handle scheduled time change
+        if scheduled_at:
+            update_fields[f"{update_path}.scheduledAt"] = scheduled_at
+        else:
+            scheduled_at = current_round.get("scheduledAt")
+        
+        # Handle interview mode change
+        if interview_mode:
+            update_fields[f"{update_path}.interviewMode"] = interview_mode
+        else:
+            interview_mode = current_round.get("interviewMode", "online")
+        
+        # Handle interview link change
+        if interview_link is not None:  # Allow empty string to clear
+            update_fields[f"{update_path}.interviewLink"] = interview_link
+        else:
+            interview_link = current_round.get("interviewLink")
+        
+        # Handle interview address change
+        if interview_address is not None:  # Allow empty string to clear
+            update_fields[f"{update_path}.interviewAddress"] = interview_address
+        else:
+            interview_address = current_round.get("interviewAddress")
+        
+        # Handle additional notes change
+        if additional_notes is not None:  # Allow empty string to clear
+            update_fields[f"{update_path}.additionalNotes"] = additional_notes
+        else:
+            additional_notes = current_round.get("additionalNotes")
+        
+        # Always update these fields
+        update_fields[f"{update_path}.updatedBy"] = user_email
+        update_fields[f"{update_path}.updatedAt"] = now
+        update_fields["updatedAt"] = now
+        
+        # Update round
+        await interviewsCol.update_one(
+            {"_id": ObjectId(interview_id)},
+            {"$set": update_fields}
+        )
+        
+        # Get updated interview
+        updated = await self.get_interview(interview_id, user_org_id)
+        
+        # Send reschedule email notifications (non-blocking)
+        try:
+            # Fetch job seeker details
+            job_seeker = await jobSeekersCol.find_one({
+                "_id": ObjectId(interview["jobSeekerId"]),
+                "isActive": True
+            })
+            
+            # Fetch job details
+            job = await jobsCol.find_one({
+                "_id": ObjectId(interview["jobId"])
+            })
+            
+            # Fetch organization details
+            org = await orgsCol.find_one({
+                "_id": ObjectId(user_org_id)
+            })
+            
+            if job_seeker and job and org and interviewer:
+                job_seeker_name = job_seeker.get("name", "Candidate")
+                job_seeker_email = job_seeker.get("email")
+                job_title = job.get("title", "Position")
+                org_name = org.get("organizationName", "Company")
+                interviewer_name = interviewer.get("name")
+                interviewer_email = interviewer.get("email")
+                
+                # Format date and time
+                interview_date = scheduled_at.strftime("%B %d, %Y")
+                interview_time = scheduled_at.strftime("%I:%M %p")
+                
+                # Get round name
+                round_name = self.ROUND_NAMES.get(round_number, f"Round {round_number}")
+                
+                # Add reschedule warning
+                reschedule_note = "⚠️ RESCHEDULED: This interview has been rescheduled. Please note the updated details below."
+                final_notes = f"{reschedule_note}\n\n{additional_notes}" if additional_notes else reschedule_note
+                
+                # Send email to job seeker
+                if job_seeker_email:
+                    send_interview_scheduled_email(
+                        to_email=job_seeker_email,
+                        recipient_name=job_seeker_name,
+                        recipient_type="jobseeker",
+                        job_title=f"{job_title} - {round_name}",
+                        organization_name=org_name,
+                        interview_date=interview_date,
+                        interview_time=interview_time,
+                        interview_mode=interview_mode,
+                        interview_link=interview_link,
+                        interview_address=interview_address,
+                        interviewer_name=interviewer_name,
+                        additional_notes=final_notes
+                    )
+                    print(f"✅ Reschedule email sent to job seeker: {job_seeker_email}")
+                
+                # Send email to interviewer
+                if interviewer_email:
+                    send_interview_scheduled_email(
+                        to_email=interviewer_email,
+                        recipient_name=interviewer_name,
+                        recipient_type="interviewer",
+                        job_title=f"{job_title} - {round_name}",
+                        organization_name=org_name,
+                        interview_date=interview_date,
+                        interview_time=interview_time,
+                        interview_mode=interview_mode,
+                        interview_link=interview_link,
+                        interview_address=interview_address,
+                        candidate_name=job_seeker_name,
+                        additional_notes=final_notes
+                    )
+                    print(f"✅ Reschedule email sent to interviewer: {interviewer_email}")
+            
+        except Exception as e:
+            # Email sending should not block the rescheduling process
+            print(f"⚠️ Failed to send reschedule emails: {e}")
+        
         return updated
     
     async def update_round(

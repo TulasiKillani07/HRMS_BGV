@@ -15,6 +15,10 @@ class RoundDetails(BaseModel):
     interviewerEmail: Optional[EmailStr] = None
     scheduledAt: Optional[datetime] = None
     status: str = Field(default="Pending", pattern="^(Pending|Scheduled|Passed|Failed)$")
+    interviewMode: Optional[str] = Field(None, pattern="^(online|offline)$")
+    interviewLink: Optional[str] = None
+    interviewAddress: Optional[str] = None
+    additionalNotes: Optional[str] = None
     rating: Optional[int] = Field(None, ge=1, le=5)
     feedback: str = ""
     completedAt: Optional[datetime] = None
@@ -72,6 +76,22 @@ class ScheduleRoundRequest(BaseModel):
     roundNumber: int = Field(..., ge=1, le=4)
     interviewerId: str = Field(..., description="Interviewer ID from interviewers collection")
     scheduledAt: datetime
+    interviewMode: str = Field(..., pattern="^(online|offline)$", description="Interview mode: online or offline")
+    interviewLink: Optional[str] = Field(None, description="Meeting link for online interviews")
+    interviewAddress: Optional[str] = Field(None, description="Office address for offline interviews")
+    additionalNotes: Optional[str] = Field(None, description="Additional instructions for the interview")
+
+
+class RescheduleRoundRequest(BaseModel):
+    """Schema for rescheduling a round"""
+    interviewId: str
+    roundNumber: int = Field(..., ge=1, le=4)
+    interviewerId: Optional[str] = Field(None, description="New interviewer ID (optional - keeps existing if not provided)")
+    scheduledAt: Optional[datetime] = Field(None, description="New scheduled date/time (optional - keeps existing if not provided)")
+    interviewMode: Optional[str] = Field(None, pattern="^(online|offline)$", description="New interview mode (optional)")
+    interviewLink: Optional[str] = Field(None, description="New meeting link (optional)")
+    interviewAddress: Optional[str] = Field(None, description="New office address (optional)")
+    additionalNotes: Optional[str] = Field(None, description="New additional instructions (optional)")
 
 
 class UpdateRoundRequest(BaseModel):

@@ -13,6 +13,7 @@ from .service import InterviewService
 from .schemas import (
     CreateInterviewRequest,
     ScheduleRoundRequest,
+    RescheduleRoundRequest,
     UpdateRoundRequest,
     ExtendOfferRequest,
     RejectCandidateRequest,
@@ -274,7 +275,7 @@ async def get_interview(
     "/scheduleRound",
     summary="Schedule Interview Round",
     description="""
-    **Purpose:** Schedule a specific interview round.
+    **Purpose:** Schedule a specific interview round and send email notifications.
     
     **Role Access:** ORG_HR, SPOC only
     
@@ -284,7 +285,25 @@ async def get_interview(
       "interviewId": "6a0031bf651c6dea3f1acda9",
       "roundNumber": 1,
       "interviewerId": "6a0032bf651c6dea3f1acdaa",
-      "scheduledAt": "2026-05-12T10:00:00Z"
+      "scheduledAt": "2026-05-12T10:00:00Z",
+      "interviewMode": "online",
+      "interviewLink": "https://meet.google.com/abc-defg-hij",
+      "interviewAddress": null,
+      "additionalNotes": "Please review the candidate's resume before the interview"
+    }
+    ```
+    
+    **Request Body (Offline Interview):**
+    ```json
+    {
+      "interviewId": "6a0031bf651c6dea3f1acda9",
+      "roundNumber": 1,
+      "interviewerId": "6a0032bf651c6dea3f1acdaa",
+      "scheduledAt": "2026-05-12T10:00:00Z",
+      "interviewMode": "offline",
+      "interviewLink": null,
+      "interviewAddress": "123 Business Park, 5th Floor, Conference Room A, Bangalore - 560001",
+      "additionalNotes": "Please bring a valid ID proof"
     }
     ```
     
@@ -304,6 +323,10 @@ async def get_interview(
             "interviewerEmail": "priya@company.com",
             "scheduledAt": "2026-05-12T10:00:00Z",
             "status": "Scheduled",
+            "interviewMode": "online",
+            "interviewLink": "https://meet.google.com/abc-defg-hij",
+            "interviewAddress": null,
+            "additionalNotes": "Please review the candidate's resume before the interview",
             "rating": null,
             "feedback": "",
             "completedAt": null,
@@ -317,16 +340,27 @@ async def get_interview(
     }
     ```
     
+    **Email Notifications:**
+    - ✅ **Job Seeker Email:** Sent with interview details, date, time, and link/address
+    - ✅ **Interviewer Email:** Sent with candidate details and interview information
+    - 📧 Emails are sent automatically after scheduling (non-blocking)
+    
     **Validation:**
     - Cannot schedule Round N if Round N-1 is not "Passed"
     - Cannot schedule for rejected or hired candidates
     - Interviewer must exist and be active
     - Interviewer must be available
+    - `interviewMode` must be "online" or "offline"
+    - **If `interviewMode` is "online", `interviewLink` is REQUIRED**
+    - **If `interviewMode` is "offline", `interviewAddress` is REQUIRED**
     
     **Behavior:**
     - Updates round status to "Scheduled"
     - Auto-fills interviewer name and email from interviewers collection
-    - Stores interviewerId for reference
+    - Stores interview mode, link/address, and notes
+    - Sends email to job seeker with interview details
+    - Sends email to interviewer with candidate details
+    - Email failures do not block scheduling
     
     **How to Get Interviewers:**
     Use `GET /secure/getInterviewers?isActive=true&isAvailable=true` to get available interviewers
@@ -356,6 +390,19 @@ async def schedule_round(
     user_org_id = user.get("organizationId")
     user_email = user.get("email")
     
+    # Validate interview mode requirements
+    if request.interviewMode == "online" and not request.interviewLink:
+        raise HTTPException(
+            status_code=400,
+            detail="Interview link is required for online interviews"
+        )
+    
+    if request.interviewMode == "offline" and not request.interviewAddress:
+        raise HTTPException(
+            status_code=400,
+            detail="Interview address is required for offline interviews"
+        )
+    
     try:
         interview = await interview_service.schedule_round(
             interview_id=request.interviewId,
@@ -363,7 +410,11 @@ async def schedule_round(
             interviewer_id=request.interviewerId,
             scheduled_at=request.scheduledAt,
             user_org_id=user_org_id,
-            user_email=user_email
+            user_email=user_email,
+            interview_mode=request.interviewMode,
+            interview_link=request.interviewLink,
+            interview_address=request.interviewAddress,
+            additional_notes=request.additionalNotes
         )
         
         # Serialize datetime fields
@@ -389,6 +440,133 @@ async def schedule_round(
         raise HTTPException(
             status_code=500,
             detail=f"Error scheduling round: {str(e)}"
+        )
+
+
+@router.put(
+    "/rescheduleRound",
+    summary="Reschedule Interview Round",
+    description="""
+    **Purpose:** Reschedule an already scheduled interview round. Sends updated email notifications.
+    
+    **Role Access:** ORG_HR, SPOC only
+    
+    **Use Cases:**
+    - Change interview date/time
+    - Change interviewer
+    - Change interview mode (online ↔ offline)
+    - Update meeting link or office address
+    
+    **Request Body (Full Update):**
+    ```json
+    {
+      "interviewId": "6a0031bf651c6dea3f1acda9",
+      "roundNumber": 1,
+      "interviewerId": "6a0032bf651c6dea3f1acdbb",
+      "scheduledAt": "2026-05-22T14:00:00Z",
+      "interviewMode": "offline",
+      "interviewAddress": "New Office, 10th Floor, Room B",
+      "additionalNotes": "Rescheduled due to interviewer unavailability"
+    }
+    ```
+    
+    **Request Body (Partial Update - Only Date):**
+    ```json
+    {
+      "interviewId": "6a0031bf651c6dea3f1acda9",
+      "roundNumber": 1,
+      "scheduledAt": "2026-05-22T14:00:00Z"
+    }
+    ```
+    
+    **Flexible Updates:**
+    - All fields except `interviewId` and `roundNumber` are optional
+    - Omitted fields keep their existing values
+    - Allows partial updates
+    
+    **Email Notifications:**
+    - ✅ Sends "RESCHEDULED" warning email to job seeker
+    - ✅ Sends "RESCHEDULED" warning email to interviewer
+    
+    **Validation:**
+    - Round must already be "Scheduled"
+    - Cannot reschedule rejected/hired candidates
+    - **If changing to "online" mode, `interviewLink` is REQUIRED**
+    - **If changing to "offline" mode, `interviewAddress` is REQUIRED**
+    """,
+    responses={
+        200: {"description": "Round rescheduled successfully"},
+        400: {"description": "Round not scheduled yet or validation error"},
+        403: {"description": "Unauthorized"},
+        404: {"description": "Interview not found"}
+    }
+)
+async def reschedule_round(
+    request: RescheduleRoundRequest,
+    user: dict = Depends(requireAuth)
+):
+    """Reschedule interview round"""
+    
+    role = user.get("role")
+    
+    if role not in ["ORG_HR", "SPOC"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Only ORG_HR and SPOC can reschedule rounds"
+        )
+    
+    user_org_id = user.get("organizationId")
+    user_email = user.get("email")
+    
+    # Validate interview mode requirements (if mode is being changed)
+    if request.interviewMode:
+        if request.interviewMode == "online" and not request.interviewLink:
+            raise HTTPException(
+                status_code=400,
+                detail="Interview link is required when changing to online mode"
+            )
+        
+        if request.interviewMode == "offline" and not request.interviewAddress:
+            raise HTTPException(
+                status_code=400,
+                detail="Interview address is required when changing to offline mode"
+            )
+    
+    try:
+        interview = await interview_service.reschedule_round(
+            interview_id=request.interviewId,
+            round_number=request.roundNumber,
+            interviewer_id=request.interviewerId,
+            scheduled_at=request.scheduledAt,
+            user_org_id=user_org_id,
+            user_email=user_email,
+            interview_mode=request.interviewMode,
+            interview_link=request.interviewLink,
+            interview_address=request.interviewAddress,
+            additional_notes=request.additionalNotes
+        )
+        
+        interview = serialize_interview_datetime(interview)
+        
+        await logActivity(
+            user,
+            "Round Rescheduled",
+            f"Rescheduled Round {request.roundNumber}",
+            "Info"
+        )
+        
+        return {
+            "message": "Round rescheduled successfully",
+            "interviewId": interview.get("_id"),
+            "interview": interview
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error rescheduling round: {str(e)}"
         )
 
 
@@ -1340,3 +1518,7 @@ async def get_all_interviews(
             status_code=500,
             detail=f"Error fetching interviews: {str(e)}"
         )
+
+
+
+
